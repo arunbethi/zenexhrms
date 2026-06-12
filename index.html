@@ -626,6 +626,17 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
 <!-- TOAST -->
 <div id="toast"></div>
 
+<!-- SP LOADING OVERLAY -->
+<div id="sp-loading" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.88);z-index:60;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation:spin 1s linear infinite">
+    <circle cx="20" cy="20" r="16" stroke="rgba(255,255,255,.2)" stroke-width="4"/>
+    <path d="M20 4 A16 16 0 0 1 36 20" stroke="#CC1414" stroke-width="4" stroke-linecap="round"/>
+  </svg>
+  <div id="sp-msg" style="color:#F1F5F9;font-size:15px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif">Connecting to SharePoint…</div>
+  <div id="sp-sub" style="color:#475569;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif">Loading organisation data</div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
 <script>
 // ════════════════════════════════════════════
 // MICROSOFT AUTHENTICATION (MSAL)
@@ -655,7 +666,7 @@ function msLoginUser(acc) {
     user = { id:'ms_'+Date.now(), name, username:email, password:null, role:'employee',
              dept:'Unassigned', position:'', join:td(), active:true,
              email, phone:'', emergency:'', emergencyPhone:'', msAccount:true };
-    users.push(user); DB.set('users', users);
+    users.push(user); dbSet('users', users);
   }
   return user;
 }
@@ -685,6 +696,7 @@ async function msLogin() {
   try {
     const instance = getMsalInstance();
     const result = await instance.loginPopup({ scopes: ['User.Read'] });
+    _msalInstance = instance; // store for SP token reuse
     const user = msLoginUser(result.account);
     if (!user.active) {
       errEl.textContent = 'Your account is deactivated. Contact HR.';
@@ -709,6 +721,156 @@ function msErrMsg(e) {
   if (e.errorCode === 'redirect_uri_mismatch') return 'Redirect URI mismatch — ask your IT admin to add this URL in Azure app settings.';
   if (e.errorCode === 'interaction_in_progress') return 'A sign-in is already in progress. Please wait or reload.';
   return e.message || 'Microsoft sign-in failed. Try again.';
+}
+
+// Store MSAL instance after login for token reuse
+let _msalInstance = null;
+
+// ════════════════════════════════════════════
+// SHAREPOINT / GRAPH API LAYER
+// ════════════════════════════════════════════
+const SP = {
+  siteId: null,
+  listIds: {},
+  GRAPH: 'https://graph.microsoft.com/v1.0',
+  SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All'],
+  LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs'],
+
+  async token() {
+    if (!_msalInstance) return null;
+    const accounts = _msalInstance.getAllAccounts();
+    if (!accounts.length) return null;
+    try {
+      const r = await _msalInstance.acquireTokenSilent({ scopes: this.SCOPES, account: accounts[0] });
+      return r.accessToken;
+    } catch(e) {
+      try { const r = await _msalInstance.acquireTokenPopup({ scopes: this.SCOPES }); return r.accessToken; }
+      catch(e2) { return null; }
+    }
+  },
+
+  async req(method, path, body) {
+    const tok = await this.token();
+    if (!tok) return null;
+    try {
+      const resp = await fetch(this.GRAPH + path, {
+        method,
+        headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (!resp.ok) { console.warn('SP', resp.status, path); return null; }
+      if (method === 'DELETE') return true;
+      return resp.json();
+    } catch(e) { console.warn('SP fetch', e); return null; }
+  },
+
+  async init() {
+    spMsg('Getting SharePoint site…');
+    const site = await this.req('GET', '/sites/zenexpartners.sharepoint.com:/');
+    if (!site) return false;
+    this.siteId = site.id;
+
+    spMsg('Setting up lists…');
+    const existing = await this.req('GET', `/sites/${this.siteId}/lists?$select=id,name&$top=200`);
+    if (existing) existing.value.forEach(l => { this.listIds[l.name] = l.id; });
+
+    // Create any missing lists with a RecordData multi-line column
+    for (const name of this.LISTS) {
+      if (!this.listIds[name]) {
+        spMsg('Creating list: ' + name);
+        const list = await this.req('POST', `/sites/${this.siteId}/lists`, {
+          displayName: name,
+          list: { template: 'genericList' },
+          columns: [{ name: 'RecordData', text: { allowMultipleLines: true, maxLength: 65535 } }]
+        });
+        if (list) this.listIds[name] = list.id;
+      }
+    }
+    return true;
+  },
+
+  async getAll(listName) {
+    if (!this.siteId || !this.listIds[listName]) return null;
+    let items = [], nextUrl = `/sites/${this.siteId}/lists/${this.listIds[listName]}/items?$expand=fields($select=Title,RecordData)&$top=999`;
+    while (nextUrl) {
+      const page = await this.req('GET', nextUrl);
+      if (!page) break;
+      page.value.forEach(i => {
+        try { const r = JSON.parse(i.fields.RecordData || '{}'); r._spId = i.id; if (r.id) items.push(r); } catch(e) {}
+      });
+      nextUrl = page['@odata.nextLink'] ? page['@odata.nextLink'].replace(this.GRAPH,'') : null;
+    }
+    return items;
+  },
+
+  async upsert(listName, record) {
+    if (!this.siteId || !this.listIds[listName] || !record || !record.id) return;
+    const fields = { Title: String(record.id), RecordData: JSON.stringify(record) };
+    if (record._spId) {
+      await this.req('PATCH', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${record._spId}/fields`, fields);
+    } else {
+      const result = await this.req('POST', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items`, { fields });
+      if (result) { record._spId = result.id || result.fields?.id; }
+    }
+  },
+
+  async remove(listName, spId) {
+    if (!this.siteId || !this.listIds[listName] || !spId) return;
+    await this.req('DELETE', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${spId}`);
+  }
+};
+
+// DB key → SP list name
+const SP_MAP = { users:'ZP_Users', attendance:'ZP_Attendance', breaks:'ZP_Breaks', leaves:'ZP_Leaves', announcements:'ZP_Announcements', logs:'ZP_Logs' };
+
+// Write-through: save to localStorage AND push to SP (non-blocking)
+function dbSet(key, value) {
+  DB.set(key, value);
+  if (!SP.siteId || !SP_MAP[key]) return;
+  const listName = SP_MAP[key];
+  const records = Array.isArray(value) ? value : [value];
+  records.forEach(rec => { if (rec && rec.id) SP.upsert(listName, rec).catch(() => {}); });
+}
+
+// Remove from SP when deleting a record
+function dbRemove(key, record) {
+  if (!record) return;
+  const newArr = DB.get(key).filter(r => r.id !== record.id);
+  DB.set(key, newArr);
+  if (SP.siteId && SP_MAP[key] && record._spId) SP.remove(SP_MAP[key], record._spId).catch(() => {});
+}
+
+// Loading overlay helpers
+function spLoading(show) { const el=gi('sp-loading'); if(el) el.style.display=show?'flex':'none'; }
+function spMsg(msg, sub) { const m=gi('sp-msg'),s=gi('sp-sub'); if(m)m.textContent=msg; if(s&&sub)s.textContent=sub; }
+
+// Full sync on login (pull SP → localStorage, push local → SP if SP empty)
+async function spSync() {
+  if (!_msalInstance) { showAppUI(); return; }
+  spLoading(true);
+  const ok = await SP.init();
+  if (!ok) { spLoading(false); toast('SharePoint unavailable — using local data only','error'); showAppUI(); return; }
+
+  spMsg('Syncing data…','This only takes a moment');
+  for (const [key, listName] of Object.entries(SP_MAP)) {
+    const spItems = await SP.getAll(listName);
+    if (spItems === null) continue;
+    if (spItems.length > 0) {
+      // SP has data — use it (merge _spId into records)
+      DB.set(key, spItems);
+    } else {
+      // SP empty — push local data up (first-time migration)
+      const local = DB.get(key);
+      if (local.length > 0) {
+        spMsg('Uploading ' + key + '…');
+        for (const rec of local) { await SP.upsert(listName, rec); }
+        DB.set(key, local); // save with _spId fields updated
+      }
+    }
+  }
+  spLoading(false);
+  toast('Synced with SharePoint ✓','success');
+  showAppUI();
 }
 
 // ════════════════════════════════════════════
@@ -774,7 +936,7 @@ function lg(uid,uname,action,details) {
   const logs=DB.get('logs');
   logs.unshift({id:'l_'+Date.now()+Math.random().toString(36).slice(2,5),uid,uname,action,details,ts:new Date().toISOString()});
   if (logs.length>2000) logs.length=2000;
-  DB.set('logs',logs);
+  dbSet('logs',logs);
 }
 
 // ════════════════════════════════════════════
@@ -786,7 +948,7 @@ function clockIn(wfh) {
   if (todayAtt(CU.id)) return toast('Already clocked in today','error');
   const now=new Date();
   const rec={id:'a_'+Date.now(),uid:CU.id,date:td(),in:ft(now),out:null,hours:null,overtime:null,status:'present',wfh:!!wfh};
-  const arr=DB.get('attendance'); arr.push(rec); DB.set('attendance',arr);
+  const arr=DB.get('attendance'); arr.push(rec); dbSet('attendance',arr);
   lg(CU.id,CU.name,'CLOCK_IN','Clocked in at '+f12(now)+(wfh?' (WFH)':''));
   toast('Clocked in at '+f12(now)+(wfh?' — WFH':''),'success');
   navigate('dashboard');
@@ -803,7 +965,7 @@ function clockOut() {
   const h=Math.max(0,ms/3600000);
   arr[i].hours=h.toFixed(2);
   arr[i].overtime=h>8?Math.max(0,h-8).toFixed(2):null;
-  DB.set('attendance',arr);
+  dbSet('attendance',arr);
   const ot=arr[i].overtime?` | OT: +${arr[i].overtime}h`:'';
   lg(CU.id,CU.name,'CLOCK_OUT',`Clocked out at ${f12(now)}, Total: ${arr[i].hours}h${ot}`);
   toast(`Clocked out · ${arr[i].hours}h${arr[i].overtime?' (+'+arr[i].overtime+'h OT)':''}`,arr[i].overtime?'info':'success');
@@ -822,7 +984,7 @@ function startBreak() {
   if (activeBrk(CU.id)) return toast('Already on a break','error');
   const now=new Date();
   const b={id:'b_'+Date.now(),attId:att.id,uid:CU.id,date:td(),start:ft(now),end:null,min:null};
-  const arr=DB.get('breaks'); arr.push(b); DB.set('breaks',arr);
+  const arr=DB.get('breaks'); arr.push(b); dbSet('breaks',arr);
   lg(CU.id,CU.name,'BREAK_START','Break started at '+f12(now));
   toast('Break started','info'); navigate('dashboard');
 }
@@ -834,7 +996,7 @@ function endBreak() {
   const now=new Date();
   arr[i].end=ft(now);
   arr[i].min=Math.round((tms(arr[i].end)-tms(arr[i].start))/60000);
-  DB.set('breaks',arr);
+  dbSet('breaks',arr);
   lg(CU.id,CU.name,'BREAK_END',`Break ended at ${f12(now)}, Duration: ${arr[i].min} min`);
   toast('Break ended ('+arr[i].min+' min)','success'); navigate('dashboard');
 }
@@ -847,7 +1009,7 @@ function submitLeave(type,sd,ed,reason) {
   if (new Date(ed)<new Date(sd)) return toast('End date must be after start','error');
   const days=Math.ceil((new Date(ed)-new Date(sd))/86400000)+1;
   const lv={id:'lv_'+Date.now(),uid:CU.id,uname:CU.name,dept:CU.dept,type,sd,ed,days,reason:reason.trim(),status:'pending',applied:td(),reviewBy:null,reviewOn:null,comment:null};
-  const arr=DB.get('leaves'); arr.push(lv); DB.set('leaves',arr);
+  const arr=DB.get('leaves'); arr.push(lv); dbSet('leaves',arr);
   lg(CU.id,CU.name,'LEAVE_APPLY',`Applied ${type} leave ${sd} to ${ed}`);
   toast('Leave request submitted','success'); closeModal(); navigate('leaves');
 }
@@ -857,7 +1019,7 @@ function reviewLeave(id,status,comment) {
   const i=arr.findIndex(l=>l.id===id);
   if (i<0) return toast('Not found','error');
   arr[i].status=status; arr[i].reviewBy=CU.name; arr[i].reviewOn=td(); arr[i].comment=comment||'';
-  DB.set('leaves',arr);
+  dbSet('leaves',arr);
   lg(CU.id,CU.name,'LEAVE_REVIEW',`${status} leave of ${arr[i].uname}`);
   toast('Leave '+status,'success'); closeModal(); navigate('leaves-admin');
 }
@@ -872,11 +1034,11 @@ function saveEmp(data,editId) {
   if (editId) {
     const i=users.findIndex(u=>u.id===editId);
     if (i<0) return;
-    Object.assign(users[i],data); DB.set('users',users);
+    Object.assign(users[i],data); dbSet('users',users);
     lg(CU.id,CU.name,'EMP_EDIT','Edited: '+data.name); toast('Employee updated','success');
   } else {
     users.push({id:'u_'+Date.now(),...data,role:data.role||'employee',active:true});
-    DB.set('users',users);
+    dbSet('users',users);
     lg(CU.id,CU.name,'EMP_ADD','Added: '+data.name); toast('Employee added','success');
   }
   closeModal(); navigate('employees');
@@ -885,7 +1047,7 @@ function saveEmp(data,editId) {
 function toggleEmp(uid) {
   const users=DB.get('users'), i=users.findIndex(u=>u.id===uid);
   if (i<0) return;
-  users[i].active=!users[i].active; DB.set('users',users);
+  users[i].active=!users[i].active; dbSet('users',users);
   lg(CU.id,CU.name,users[i].active?'EMP_ACTIVATE':'EMP_DEACTIVATE',users[i].name);
   toast(users[i].name+' '+(users[i].active?'activated':'deactivated'),'info');
   navigate('employees');
@@ -897,14 +1059,15 @@ function toggleEmp(uid) {
 function postAnn(title,body,type,priority) {
   if (!title.trim()||!body.trim()) return toast('Title and message required','error');
   const ann={id:'ann_'+Date.now(),title:title.trim(),body:body.trim(),type,priority,by:CU.name,date:td(),readBy:[]};
-  const arr=DB.get('announcements'); arr.unshift(ann); DB.set('announcements',arr);
+  const arr=DB.get('announcements'); arr.unshift(ann); dbSet('announcements',arr);
   lg(CU.id,CU.name,'ANNOUNCE_POST','Posted: '+title);
   toast('Announcement posted','success'); closeModal(); navigate('announcements-admin');
 }
 
 function deleteAnn(id) {
   if (!confirm('Delete this announcement?')) return;
-  DB.set('announcements',DB.get('announcements').filter(a=>a.id!==id));
+  const rec=DB.get('announcements').find(a=>a.id===id);
+  dbRemove('announcements',rec);
   lg(CU.id,CU.name,'ANNOUNCE_DEL','Deleted announcement');
   toast('Deleted','info'); navigate('announcements-admin');
 }
@@ -912,7 +1075,7 @@ function deleteAnn(id) {
 function markRead(id) {
   const arr=DB.get('announcements'), i=arr.findIndex(a=>a.id===id);
   if (i<0||arr[i].readBy.includes(CU.id)) return;
-  arr[i].readBy.push(CU.id); DB.set('announcements',arr);
+  arr[i].readBy.push(CU.id); dbSet('announcements',arr);
 }
 
 function syncBell() {
@@ -928,14 +1091,15 @@ function syncBell() {
 function saveDoc(name,type,dataUrl) {
   const docs=DB.get('documents');
   docs.push({id:'doc_'+Date.now(),uid:CU.id,uname:CU.name,name,type,date:td(),dataUrl});
-  DB.set('documents',docs);
+  dbSet('documents',docs);
   lg(CU.id,CU.name,'DOC_UPLOAD','Uploaded: '+name);
   toast('Document saved','success'); navigate('profile');
 }
 
 function deleteDoc(id) {
   if (!confirm('Remove this document?')) return;
-  DB.set('documents',DB.get('documents').filter(d=>d.id!==id));
+  const rec=DB.get('documents').find(d=>d.id===id);
+  dbRemove('documents',rec);
   lg(CU.id,CU.name,'DOC_DEL','Deleted document');
   toast('Removed','info'); navigate('profile');
 }
@@ -1014,6 +1178,11 @@ let curPage='dashboard';
 function showApp() {
   gi('login-page').style.display='none';
   gi('app').style.display='block';
+  // MS users get SharePoint sync; demo users go straight to UI
+  if (CU.msAccount && _msalInstance) { spSync(); } else { showAppUI(); }
+}
+
+function showAppUI() {
   gi('sb-name').textContent=CU.name;
   gi('sb-role').textContent=CU.role==='admin'?'Administrator':CU.dept;
   gi('sb-av').textContent=ini(CU.name);
@@ -1276,301 +1445,4 @@ function pgMyAtt() {
   <div class="card"><div class="tbl-wrap">
   <table><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Hours</th><th>Overtime</th><th>WFH</th><th>Status</th></tr></thead>
   <tbody>`;
-  if (!att.length) html+=`<tr><td colspan="8"><div class="empty-state">No attendance records yet</div></td></tr>`;
-  else att.forEach(r=>{ html+=`<tr><td>${fdate(r.date)}</td><td>${r.in?dt(r.in):'--'}</td><td>${r.out?dt(r.out):'--'}</td><td>${totalBrkMin(r.id)||'--'}</td><td>${r.hours||'--'}</td><td>${r.overtime?`<span class="ot-badge">+${r.overtime}h</span>`:'--'}</td><td>${r.wfh?'<span class="wfh-badge">WFH</span>':'Office'}</td><td>${sbadge(r.status)}</td></tr>`; });
-  html+=`</tbody></table></div></div>`;
-  gi('page-body').innerHTML=html;
-}
-
-// ════════════════════════════════════════════
-// PAGE: LEAVES (Employee)
-// ════════════════════════════════════════════
-function pgLeaves() {
-  const myLv=DB.get('leaves').filter(l=>l.uid===CU.id).reverse();
-  let html=`<div class="sec-hdr"><div></div><button class="btn btn-primary" onclick="openApply()">+ Apply for Leave</button></div>
-  <div class="card"><div class="tbl-wrap">
-  <table><thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Comment</th></tr></thead>
-  <tbody>`;
-  if (!myLv.length) html+=`<tr><td colspan="7"><div class="empty-state">No leave requests yet</div></td></tr>`;
-  else myLv.forEach(l=>{ html+=`<tr><td>${lvbadge(l.type)}</td><td>${fdate(l.sd)}</td><td>${fdate(l.ed)}</td><td>${l.days}</td><td title="${esc(l.reason)}">${esc(l.reason.length>30?l.reason.slice(0,30)+'…':l.reason)}</td><td>${sbadge(l.status)}</td><td>${esc(l.comment||'--')}</td></tr>`; });
-  html+=`</tbody></table></div></div>`;
-  gi('page-body').innerHTML=html;
-}
-
-function openApply(){
-  modal('<h3>Apply for Leave</h3>',
-    `<div class="fg"><label>Leave Type</label><select id="lv-t"><option value="sick">Sick Leave</option><option value="casual">Casual Leave</option><option value="annual">Annual Leave</option><option value="emergency">Emergency Leave</option></select></div>
-     <div class="grid-2"><div class="fg"><label>From Date</label><input id="lv-sd" type="date" min="${td()}"></div><div class="fg"><label>To Date</label><input id="lv-ed" type="date" min="${td()}"></div></div>
-     <div class="fg"><label>Reason</label><textarea id="lv-r" placeholder="Briefly describe the reason..."></textarea></div>`,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitLeave(gv('lv-t'),gv('lv-sd'),gv('lv-ed'),gv('lv-r'))">Submit Request</button>`);
-}
-
-// ════════════════════════════════════════════
-// PAGE: LEAVES ADMIN
-// ════════════════════════════════════════════
-function pgLeavesAdmin() {
-  let html=`<div class="filter-bar"><select id="lv-fs" onchange="filterLv()"><option value="">All Status</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div>
-  <div class="card"><div class="tbl-wrap">
-  <table><thead><tr><th>Employee</th><th>Dept</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
-  <tbody id="lv-tb">${lvRows(DB.get('leaves').slice().reverse())}</tbody></table></div></div>`;
-  gi('page-body').innerHTML=html;
-}
-
-function lvRows(leaves){
-  if (!leaves.length) return `<tr><td colspan="8"><div class="empty-state">No requests found</div></td></tr>`;
-  return leaves.map(l=>`<tr><td>${esc(l.uname)}</td><td>${esc(l.dept||'')}</td><td>${lvbadge(l.type)}</td><td>${fdate(l.sd)}</td><td>${fdate(l.ed)}</td><td>${l.days}</td><td>${sbadge(l.status)}</td><td>${l.status==='pending'?`<button class="btn btn-success btn-sm" onclick="openReview('${l.id}','approved')">&#10003;</button> <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openReview('${l.id}','rejected')">&#10007;</button>`:'--'}</td></tr>`).join('');
-}
-
-function filterLv(){ const s=gi('lv-fs').value; let leaves=DB.get('leaves').slice().reverse(); if(s) leaves=leaves.filter(l=>l.status===s); gi('lv-tb').innerHTML=lvRows(leaves); }
-
-function openReview(id,def){
-  const l=DB.get('leaves').find(x=>x.id===id); if(!l)return;
-  modal('<h3>Review Leave Request</h3>',
-    `<div style="background:var(--muted);border-radius:var(--r-md);padding:var(--s4);margin-bottom:var(--s4)"><b style="font-size:14px">${esc(l.uname)}</b> &mdash; ${l.type} leave &middot; ${fdate(l.sd)} to ${fdate(l.ed)} &middot; ${l.days} day${l.days>1?'s':''}<br><span style="font-size:13px;color:var(--text-3);margin-top:4px;display:block">${esc(l.reason)}</span></div>
-     <div class="fg"><label>Decision</label><select id="rv-s"><option value="approved" ${def==='approved'?'selected':''}>Approve</option><option value="rejected" ${def==='rejected'?'selected':''}>Reject</option></select></div>
-     <div class="fg"><label>Comment (optional)</label><textarea id="rv-c" placeholder="Add a comment..."></textarea></div>`,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="reviewLeave('${id}',gv('rv-s'),gv('rv-c'))">Submit</button>`);
-}
-
-// ════════════════════════════════════════════
-// PAGE: ANNOUNCEMENTS (Employee)
-// ════════════════════════════════════════════
-function pgAnn() {
-  const anns=DB.get('announcements');
-  anns.forEach(a=>markRead(a.id)); syncBell();
-  let html=anns.length===0?`<div class="card"><div class="card-body"><div class="empty-state">No announcements</div></div></div>`:
-    anns.map(a=>`<div class="ann-card ${a.priority==='urgent'?'urgent':a.type==='info'?'info-t':''}">
-      <div class="ann-title">${a.priority==='urgent'?'&#128308; ':a.type==='info'?'&#8505;&#65039; ':'&#128226; '}${esc(a.title)}</div>
-      <div class="ann-body">${esc(a.body)}</div>
-      <div class="ann-meta">Posted by ${esc(a.by)} &middot; ${fdate(a.date)}</div>
-    </div>`).join('');
-  gi('page-body').innerHTML=html;
-}
-
-// ════════════════════════════════════════════
-// PAGE: ANNOUNCEMENTS ADMIN
-// ════════════════════════════════════════════
-function pgAnnAdmin() {
-  const anns=DB.get('announcements');
-  let html=`<div class="sec-hdr"><div></div><button class="btn btn-primary" onclick="openPostAnn()">+ New Announcement</button></div>`;
-  html+=anns.length===0?`<div class="card"><div class="card-body"><div class="empty-state">No announcements yet</div></div></div>`:
-    anns.map(a=>`<div class="ann-card ${a.priority==='urgent'?'urgent':a.type==='info'?'info-t':''}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-        <div class="ann-title">${a.priority==='urgent'?'&#128308; ':'&#128226; '}${esc(a.title)} <span class="badge bgr">${a.readBy.length} read</span></div>
-        <button class="btn btn-danger btn-sm" onclick="deleteAnn('${a.id}')">Delete</button>
-      </div>
-      <div class="ann-body">${esc(a.body)}</div>
-      <div class="ann-meta">Posted by ${esc(a.by)} &middot; ${fdate(a.date)}</div>
-    </div>`).join('');
-  gi('page-body').innerHTML=html;
-}
-
-function openPostAnn(){
-  modal('<h3>New Announcement</h3>',
-    `<div class="fg"><label>Title</label><input id="an-t" type="text" placeholder="Announcement title..."></div>
-     <div class="fg"><label>Message</label><textarea id="an-b" placeholder="Write your message..."></textarea></div>
-     <div class="grid-2">
-       <div class="fg"><label>Type</label><select id="an-ty"><option value="general">General</option><option value="info">Information</option><option value="reminder">Reminder</option></select></div>
-       <div class="fg"><label>Priority</label><select id="an-p"><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div>
-     </div>`,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="postAnn(gv('an-t'),gv('an-b'),gv('an-ty'),gv('an-p'))">Post</button>`);
-}
-
-// ════════════════════════════════════════════
-// PAGE: LOGS
-// ════════════════════════════════════════════
-function pgLogs() {
-  const acts=['LOGIN','LOGOUT','CLOCK_IN','CLOCK_OUT','BREAK_START','BREAK_END','LEAVE_APPLY','LEAVE_REVIEW','EMP_ADD','EMP_EDIT','ANNOUNCE_POST','DOC_UPLOAD'];
-  let html=`<div class="filter-bar">
-    <input type="text" id="lg-q" placeholder="Search logs..." oninput="filterLogs()">
-    <select id="lg-a" onchange="filterLogs()"><option value="">All Actions</option>${acts.map(a=>`<option value="${a}">${a}</option>`).join('')}</select>
-  </div>
-  <div class="card"><div class="tbl-wrap">
-  <table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
-  <tbody id="lg-tb">${logRows(DB.get('logs'))}</tbody></table></div></div>`;
-  gi('page-body').innerHTML=html;
-}
-
-function logRows(logs){
-  if (!logs.length) return `<tr><td colspan="4"><div class="empty-state">No logs yet</div></td></tr>`;
-  return logs.slice(0,300).map(l=>`<tr><td style="white-space:nowrap;font-size:12px;color:var(--text-3)">${fts(l.ts)}</td><td style="font-weight:500">${esc(l.uname)}</td><td><span class="log-tag">${esc(l.action)}</span></td><td style="color:var(--text-2)">${esc(l.details)}</td></tr>`).join('');
-}
-
-function filterLogs(){
-  const q=gv('lg-q').toLowerCase(), a=gv('lg-a');
-  let logs=DB.get('logs');
-  if(a) logs=logs.filter(l=>l.action===a);
-  if(q) logs=logs.filter(l=>l.details.toLowerCase().includes(q)||l.uname.toLowerCase().includes(q));
-  gi('lg-tb').innerHTML=logRows(logs);
-}
-
-// ════════════════════════════════════════════
-// PAGE: REPORTS
-// ════════════════════════════════════════════
-function pgReports() {
-  const def=td().slice(0,7);
-  let html=`<div class="sec-hdr">
-    <div class="filter-bar" style="margin:0"><input type="month" id="rpt-month" value="${def}" onchange="pgReports()"></div>
-    <button class="btn btn-ghost btn-sm" onclick="exportAtt()">Export CSV</button>
-  </div>`;
-  const sel=(gi('rpt-month')||{value:def}).value;
-  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
-  const att=DB.get('attendance'), leaves=DB.get('leaves');
-  html+=`<div class="card"><div class="tbl-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Days</th><th>Total Hrs</th><th>Avg Hrs</th><th>Overtime</th><th>WFH Days</th><th>Break (min)</th><th>Leaves</th></tr></thead><tbody>`;
-  users.forEach(u=>{
-    const uA=att.filter(r=>r.uid===u.id&&r.date&&r.date.startsWith(sel));
-    const tH=uA.reduce((s,r)=>s+parseFloat(r.hours||0),0).toFixed(1);
-    const tOT=uA.reduce((s,r)=>s+parseFloat(r.overtime||0),0).toFixed(1);
-    const avg=uA.length?(parseFloat(tH)/uA.length).toFixed(1):'0.0';
-    const wfh=uA.filter(r=>r.wfh).length;
-    const brk=DB.get('breaks').filter(b=>b.uid===u.id&&b.date&&b.date.startsWith(sel)).reduce((s,b)=>s+(b.min||0),0);
-    const lv=leaves.filter(l=>l.uid===u.id&&l.status==='approved'&&l.sd&&l.sd.startsWith(sel)).reduce((s,l)=>s+l.days,0);
-    html+=`<tr><td><div style="font-weight:600">${esc(u.name)}</div></td><td>${esc(u.dept)}</td><td>${uA.length}</td><td>${tH}</td><td>${avg}</td><td>${parseFloat(tOT)>0?`<span class="ot-badge">+${tOT}h</span>`:'--'}</td><td>${wfh||'--'}</td><td>${brk||'--'}</td><td>${lv||'--'}</td></tr>`;
-  });
-  html+=`</tbody></table></div></div>`;
-  gi('page-body').innerHTML=html;
-}
-
-// ════════════════════════════════════════════
-// PAGE: PROFILE
-// ════════════════════════════════════════════
-function pgProfile() {
-  const u=CU;
-  const att=DB.get('attendance').filter(r=>r.uid===u.id);
-  const docs=DB.get('documents').filter(d=>d.uid===u.id);
-  const leaves=DB.get('leaves').filter(l=>l.uid===u.id);
-
-  let html=`<div class="tab-bar">
-    <button class="tab-btn active" id="tb-pi" onclick="swTab('ti','tb-pi')">Profile Info</button>
-    <button class="tab-btn" id="tb-pd" onclick="swTab('td','tb-pd')">Documents (${docs.length})</button>
-    <button class="tab-btn" id="tb-pp" onclick="swTab('tp','tb-pp')">Change Password</button>
-  </div>
-
-  <div id="ti">
-    <div class="card" style="margin-bottom:18px">
-      <div class="card-body">
-        <div style="display:flex;align-items:center;gap:18px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)">
-          <div class="avatar" style="width:56px;height:56px;font-size:19px;flex-shrink:0">${ini(u.name)}</div>
-          <div>
-            <div style="font-size:20px;font-weight:800;color:var(--text)">${esc(u.name)}</div>
-            <div style="font-size:13px;color:var(--text-3);margin-top:2px">${esc(u.position)} &middot; ${esc(u.dept)}</div>
-          </div>
-        </div>
-        <div class="grid-3" style="gap:20px">
-          <div class="pf"><span>Username</span><strong>${esc(u.username)}</strong></div>
-          <div class="pf"><span>Email</span><strong>${esc(u.email||'--')}</strong></div>
-          <div class="pf"><span>Phone</span><strong>${esc(u.phone||'--')}</strong></div>
-          <div class="pf"><span>Department</span><strong>${esc(u.dept)}</strong></div>
-          <div class="pf"><span>Position</span><strong>${esc(u.position)}</strong></div>
-          <div class="pf"><span>Joined</span><strong>${fdate(u.join)}</strong></div>
-          <div class="pf"><span>Emergency Contact</span><strong>${esc(u.emergency||'--')}</strong></div>
-          <div class="pf"><span>Emergency Phone</span><strong>${esc(u.emergencyPhone||'--')}</strong></div>
-        </div>
-      </div>
-    </div>
-    <div class="stat-grid">
-      <div class="scard"><div class="scard-val">${att.length}</div><div class="scard-label">Days Present</div></div>
-      <div class="scard g"><div class="scard-val">${att.reduce((s,r)=>s+parseFloat(r.hours||0),0).toFixed(0)}</div><div class="scard-label">Total Hours</div></div>
-      <div class="scard o"><div class="scard-val">${att.reduce((s,r)=>s+parseFloat(r.overtime||0),0).toFixed(1)}</div><div class="scard-label">Overtime Hours</div></div>
-      <div class="scard b"><div class="scard-val">${leaves.filter(l=>l.status==='approved').length}</div><div class="scard-label">Leaves Taken</div></div>
-    </div>
-  </div>
-
-  <div id="td" style="display:none">
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">My Documents</span>
-        <label class="btn btn-primary btn-sm" style="cursor:pointer">+ Upload<input type="file" style="display:none" onchange="handleUpload(this)"></label>
-      </div>
-      <div class="card-body">
-        <p style="font-size:12px;color:var(--text-3);margin-bottom:14px">Supported: PDF, images, Word docs. Max 10 MB per file.</p>
-        ${docs.length===0?'<div class="empty-state">No documents uploaded yet</div>':docs.map(d=>`<div class="doc-item"><div class="doc-left">&#128196; <span>${esc(d.name)}</span><span style="font-size:11px;color:var(--text-3);margin-left:8px">${fdate(d.date)}</span></div><div style="display:flex;gap:8px"><a href="${d.dataUrl}" download="${esc(d.name)}" class="btn btn-ghost btn-sm">Download</a><button class="btn btn-danger btn-sm" onclick="deleteDoc('${d.id}')">Remove</button></div></div>`).join('')}
-      </div>
-    </div>
-  </div>
-
-  <div id="tp" style="display:none">
-    <div class="card" style="max-width:400px">
-      <div class="card-header"><span class="card-title">Change Password</span></div>
-      <div class="card-body">
-        <div class="fg"><label>Current Password</label><input id="pw-c" type="password"></div>
-        <div class="fg"><label>New Password</label><input id="pw-n" type="password"></div>
-        <div class="fg"><label>Confirm Password</label><input id="pw-cf" type="password"></div>
-        <button class="btn btn-primary" onclick="changePw()">Update Password</button>
-      </div>
-    </div>
-  </div>`;
-
-  gi('page-body').innerHTML=html;
-}
-
-function swTab(showId,btnId){
-  ['ti','td','tp'].forEach(id=>{const e=gi(id);if(e)e.style.display='none';});
-  ['tb-pi','tb-pd','tb-pp'].forEach(id=>{const e=gi(id);if(e)e.classList.remove('active');});
-  const s=gi(showId);if(s)s.style.display='block';
-  const b=gi(btnId);if(b)b.classList.add('active');
-}
-
-function handleUpload(input){
-  const file=input.files[0];if(!file)return;
-  if(file.size>10*1024*1024) return toast('File too large (max 10 MB)','error');
-  const reader=new FileReader();
-  reader.onload=e=>saveDoc(file.name,file.type,e.target.result);
-  reader.readAsDataURL(file);
-}
-
-function changePw(){
-  const c=gv('pw-c'),n=gv('pw-n'),cf=gv('pw-cf');
-  if(c!==CU.password) return toast('Current password is wrong','error');
-  if(!n||n.length<4) return toast('Min 4 characters','error');
-  if(n!==cf) return toast('Passwords do not match','error');
-  const users=DB.get('users');const i=users.findIndex(u=>u.id===CU.id);
-  users[i].password=n;DB.set('users',users);CU.password=n;
-  lg(CU.id,CU.name,'PASSWORD_CHANGE','Changed password');
-  toast('Password updated','success');
-}
-
-// ════════════════════════════════════════════
-// MODAL
-// ════════════════════════════════════════════
-function modal(hdr,body,footer){
-  gi('modal-box').innerHTML=`<div class="modal-hdr">${hdr}<button class="modal-close" onclick="closeModal()">&#x2715;</button></div><div class="modal-body">${body}</div><div class="modal-footer">${footer}</div>`;
-  gi('modal-overlay').classList.add('open');
-}
-function closeModal(){ gi('modal-overlay').classList.remove('open'); }
-function overlayClick(e){ if(e.target===gi('modal-overlay')) closeModal(); }
-
-// ════════════════════════════════════════════
-// TOAST
-// ════════════════════════════════════════════
-let toastT;
-function toast(msg,type='info'){
-  const el=gi('toast');el.textContent=msg;el.className='show '+type;
-  clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),3200);
-}
-
-// ════════════════════════════════════════════
-// ICONS
-// ════════════════════════════════════════════
-function iH(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`}
-function iU(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`}
-function iCk(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`}
-function iCal(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`}
-function iBell(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`}
-function iLog(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`}
-function iBar(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`}
-function iPerson(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}
-
-// ════════════════════════════════════════════
-// INIT
-// ════════════════════════════════════════════
-document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&gi('login-page').style.display!=='none') doLogin();
-  if(e.key==='Escape') closeModal();
-});
-
-seed();
-restore();
-</script>
-</body>
-</html>
+  if (!
