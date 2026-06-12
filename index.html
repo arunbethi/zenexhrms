@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
-<!-- Microsoft Authentication Library -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<!-- Microsoft Authentication Library v2 (jsdelivr CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2/lib/msal-browser.min.js"></script>
 <style>
 /* ── UI PRO MAX: B2B Service Design System ────────────────────────── */
 :root {
@@ -630,78 +630,79 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
 // ════════════════════════════════════════════
 // MICROSOFT AUTHENTICATION (MSAL)
 // ════════════════════════════════════════════
-const MSAL_CONFIG = {
-  auth: {
-    clientId:    '1670634a-ddcc-45ff-bc6f-13ca008acf59',
-    authority:   'https://login.microsoftonline.com/ca04e4b7-c63a-403a-afd4-aaa06cd927f0',
-    redirectUri: window.location.href.split('?')[0].split('#')[0]
-  },
-  cache: { cacheLocation: 'sessionStorage' }
-};
+// MSAL v2 — instantiated lazily per login attempt (avoids load-time errors)
+const MS_CLIENT_ID = '1670634a-ddcc-45ff-bc6f-13ca008acf59';
+const MS_TENANT_ID = 'ca04e4b7-c63a-403a-afd4-aaa06cd927f0';
 
-let msalInstance = null;
-try { msalInstance = new msal.PublicClientApplication(MSAL_CONFIG); } catch(e) {}
+function getMsalInstance() {
+  if (typeof msal === 'undefined') return null;
+  return new msal.PublicClientApplication({
+    auth: {
+      clientId:    MS_CLIENT_ID,
+      authority:   'https://login.microsoftonline.com/' + MS_TENANT_ID,
+      redirectUri: window.location.href.split('?')[0].split('#')[0]
+    },
+    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+  });
+}
+
+function msLoginUser(acc) {
+  const email = (acc.username || '').toLowerCase();
+  const name  = acc.name || acc.username;
+  let users = DB.get('users');
+  let user = users.find(u => (u.email||'').toLowerCase() === email);
+  if (!user) {
+    user = { id:'ms_'+Date.now(), name, username:email, password:null, role:'employee',
+             dept:'Unassigned', position:'', join:td(), active:true,
+             email, phone:'', emergency:'', emergencyPhone:'', msAccount:true };
+    users.push(user); DB.set('users', users);
+  }
+  return user;
+}
+
+const MS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>`;
 
 async function msLogin() {
   const btn = gi('ms-btn');
   const errEl = gi('ms-err');
-  if (!msalInstance) { errEl.textContent='MSAL failed to load. Check your connection.'; errEl.style.display='block'; return; }
-  btn.textContent = 'Signing in…'; btn.disabled = true; errEl.style.display='none';
+  errEl.style.display = 'none';
+
+  if (typeof msal === 'undefined') {
+    errEl.textContent = 'Microsoft login unavailable. Check your internet connection and reload.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.innerHTML = 'Signing in…'; btn.disabled = true;
+
   try {
-    await msalInstance.initialize();
-    const result = await msalInstance.loginPopup({ scopes: ['User.Read'] });
-    const acc = result.account;
-    const email = acc.username.toLowerCase();
-    const name  = acc.name || acc.username;
-    // Find or create user by email
-    let users = DB.get('users');
-    let user = users.find(u => (u.email||'').toLowerCase() === email);
-    if (!user) {
-      // Auto-provision as employee
-      user = {
-        id: 'ms_' + Date.now(),
-        name, username: email, password: null,
-        role: 'employee',
-        dept: 'Unassigned', position: '',
-        join: td(), active: true,
-        email, phone: '', emergency: '', emergencyPhone: '',
-        msAccount: true
-      };
-      users.push(user); DB.set('users', users);
+    const instance = getMsalInstance();
+    const result = await instance.loginPopup({ scopes: ['User.Read'] });
+    const user = msLoginUser(result.account);
+    if (!user.active) {
+      errEl.textContent = 'Your account is deactivated. Contact HR.';
+      errEl.style.display = 'block';
+      btn.innerHTML = MS_ICON + ' Sign in with Microsoft'; btn.disabled = false;
+      return;
     }
-    if (!user.active) { errEl.textContent='Your account has been deactivated. Contact HR.'; errEl.style.display='block'; btn.textContent='Sign in with Microsoft'; btn.disabled=false; return; }
     CU = user; DB.setOne('session', user.id);
-    lg(user.id, user.name, 'MS_LOGIN', 'Signed in via Microsoft (' + email + ')');
+    lg(user.id, user.name, 'MS_LOGIN', 'Microsoft login: ' + user.email);
     showApp();
   } catch(e) {
-    if (e.errorCode !== 'user_cancelled') {
-      errEl.textContent = e.message || 'Microsoft sign-in failed. Try again.';
+    if (e.errorCode && e.errorCode !== 'user_cancelled') {
+      errEl.textContent = msErrMsg(e);
       errEl.style.display = 'block';
     }
-    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg> Sign in with Microsoft`;
-    btn.disabled = false;
+    btn.innerHTML = MS_ICON + ' Sign in with Microsoft'; btn.disabled = false;
   }
 }
 
-// Handle redirect response (if popup not supported, falls back to redirect)
-(async () => {
-  if (!msalInstance) return;
-  try {
-    await msalInstance.initialize();
-    const resp = await msalInstance.handleRedirectPromise();
-    if (resp && resp.account) {
-      const email = resp.account.username.toLowerCase();
-      const name  = resp.account.name || resp.account.username;
-      let users = DB.get('users');
-      let user = users.find(u => (u.email||'').toLowerCase() === email);
-      if (!user) {
-        user = { id:'ms_'+Date.now(), name, username:email, password:null, role:'employee', dept:'Unassigned', position:'', join:td(), active:true, email, phone:'', emergency:'', emergencyPhone:'', msAccount:true };
-        users.push(user); DB.set('users', users);
-      }
-      if (user.active) { CU=user; DB.setOne('session',user.id); lg(user.id,user.name,'MS_LOGIN','Signed in via Microsoft'); showApp(); }
-    }
-  } catch(e) {}
-})();
+function msErrMsg(e) {
+  if (e.errorCode === 'popup_window_error') return 'Popup was blocked. Please allow popups for this site and try again.';
+  if (e.errorCode === 'redirect_uri_mismatch') return 'Redirect URI mismatch — ask your IT admin to add this URL in Azure app settings.';
+  if (e.errorCode === 'interaction_in_progress') return 'A sign-in is already in progress. Please wait or reload.';
+  return e.message || 'Microsoft sign-in failed. Try again.';
+}
 
 // ════════════════════════════════════════════
 // DATA LAYER
