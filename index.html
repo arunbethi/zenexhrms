@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<!-- Microsoft Authentication Library -->
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
 /* ── UI PRO MAX: B2B Service Design System ────────────────────────── */
 :root {
@@ -481,6 +483,26 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
 /* ── FILTER BAR ── */
 .filter-bar { display: flex; gap: var(--s2); margin-bottom: var(--s4); flex-wrap: wrap; }
 .filter-bar input, .filter-bar select { flex: 1; min-width: 120px; height: 36px; }
+
+/* Microsoft login button */
+.btn-ms {
+  width: 100%; height: 42px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #fff; color: #1a1a1a;
+  border: 1.5px solid #d1d5db;
+  border-radius: var(--r-md);
+  font-family: var(--font); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+  box-shadow: var(--shadow-xs);
+}
+.btn-ms:hover { background: #f9fafb; border-color: #0078d4; color: #0078d4; }
+.or-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 16px 0; color: var(--text-3); font-size: 12px;
+}
+.or-divider::before, .or-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
 </style>
 </head>
 <body>
@@ -513,6 +535,20 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
     <div class="lp-right">
       <p class="headline">Welcome back</p>
       <p class="subline">Sign in to your HRMS account</p>
+      <!-- Microsoft SSO -->
+      <button class="btn-ms" onclick="msLogin()" id="ms-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 23 23">
+          <rect x="1" y="1" width="10" height="10" fill="#f25022"/>
+          <rect x="12" y="1" width="10" height="10" fill="#7fba00"/>
+          <rect x="1" y="12" width="10" height="10" fill="#00a4ef"/>
+          <rect x="12" y="12" width="10" height="10" fill="#ffb900"/>
+        </svg>
+        Sign in with Microsoft
+      </button>
+      <p id="ms-err" style="display:none;font-size:12px;color:var(--danger);margin-top:6px"></p>
+
+      <div class="or-divider">or use demo account</div>
+
       <div class="cred-box">
         <strong>Demo Credentials</strong>
         Admin: <b>admin</b> / <b>admin123</b><br>
@@ -591,6 +627,82 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
 <div id="toast"></div>
 
 <script>
+// ════════════════════════════════════════════
+// MICROSOFT AUTHENTICATION (MSAL)
+// ════════════════════════════════════════════
+const MSAL_CONFIG = {
+  auth: {
+    clientId:    '1670634a-ddcc-45ff-bc6f-13ca008acf59',
+    authority:   'https://login.microsoftonline.com/ca04e4b7-c63a-403a-afd4-aaa06cd927f0',
+    redirectUri: window.location.href.split('?')[0].split('#')[0]
+  },
+  cache: { cacheLocation: 'sessionStorage' }
+};
+
+let msalInstance = null;
+try { msalInstance = new msal.PublicClientApplication(MSAL_CONFIG); } catch(e) {}
+
+async function msLogin() {
+  const btn = gi('ms-btn');
+  const errEl = gi('ms-err');
+  if (!msalInstance) { errEl.textContent='MSAL failed to load. Check your connection.'; errEl.style.display='block'; return; }
+  btn.textContent = 'Signing in…'; btn.disabled = true; errEl.style.display='none';
+  try {
+    await msalInstance.initialize();
+    const result = await msalInstance.loginPopup({ scopes: ['User.Read'] });
+    const acc = result.account;
+    const email = acc.username.toLowerCase();
+    const name  = acc.name || acc.username;
+    // Find or create user by email
+    let users = DB.get('users');
+    let user = users.find(u => (u.email||'').toLowerCase() === email);
+    if (!user) {
+      // Auto-provision as employee
+      user = {
+        id: 'ms_' + Date.now(),
+        name, username: email, password: null,
+        role: 'employee',
+        dept: 'Unassigned', position: '',
+        join: td(), active: true,
+        email, phone: '', emergency: '', emergencyPhone: '',
+        msAccount: true
+      };
+      users.push(user); DB.set('users', users);
+    }
+    if (!user.active) { errEl.textContent='Your account has been deactivated. Contact HR.'; errEl.style.display='block'; btn.textContent='Sign in with Microsoft'; btn.disabled=false; return; }
+    CU = user; DB.setOne('session', user.id);
+    lg(user.id, user.name, 'MS_LOGIN', 'Signed in via Microsoft (' + email + ')');
+    showApp();
+  } catch(e) {
+    if (e.errorCode !== 'user_cancelled') {
+      errEl.textContent = e.message || 'Microsoft sign-in failed. Try again.';
+      errEl.style.display = 'block';
+    }
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 23 23"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg> Sign in with Microsoft`;
+    btn.disabled = false;
+  }
+}
+
+// Handle redirect response (if popup not supported, falls back to redirect)
+(async () => {
+  if (!msalInstance) return;
+  try {
+    await msalInstance.initialize();
+    const resp = await msalInstance.handleRedirectPromise();
+    if (resp && resp.account) {
+      const email = resp.account.username.toLowerCase();
+      const name  = resp.account.name || resp.account.username;
+      let users = DB.get('users');
+      let user = users.find(u => (u.email||'').toLowerCase() === email);
+      if (!user) {
+        user = { id:'ms_'+Date.now(), name, username:email, password:null, role:'employee', dept:'Unassigned', position:'', join:td(), active:true, email, phone:'', emergency:'', emergencyPhone:'', msAccount:true };
+        users.push(user); DB.set('users', users);
+      }
+      if (user.active) { CU=user; DB.setOne('session',user.id); lg(user.id,user.name,'MS_LOGIN','Signed in via Microsoft'); showApp(); }
+    }
+  } catch(e) {}
+})();
+
 // ════════════════════════════════════════════
 // DATA LAYER
 // ════════════════════════════════════════════
