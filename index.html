@@ -673,6 +673,13 @@ async function msLogin() {
     return;
   }
 
+  // Detect file:// — Azure rejects it
+  if (window.location.protocol === 'file:') {
+    errEl.textContent = 'Microsoft login requires a hosted URL (https:// or http://localhost). Open this file via GitHub Pages or a local web server.';
+    errEl.style.display = 'block';
+    return;
+  }
+
   btn.innerHTML = 'Signing in…'; btn.disabled = true;
 
   try {
@@ -860,7 +867,7 @@ function reviewLeave(id,status,comment) {
 // ════════════════════════════════════════════
 function saveEmp(data,editId) {
   const users=DB.get('users');
-  if (!data.name||!data.username||!data.password) return toast('Name, username & password required','error');
+  if (!data.name||!data.username||(!editId&&!data.password)) return toast('Name and username required','error');
   if (!editId&&users.find(u=>u.username===data.username)) return toast('Username already taken','error');
   if (editId) {
     const i=users.findIndex(u=>u.id===editId);
@@ -868,7 +875,7 @@ function saveEmp(data,editId) {
     Object.assign(users[i],data); DB.set('users',users);
     lg(CU.id,CU.name,'EMP_EDIT','Edited: '+data.name); toast('Employee updated','success');
   } else {
-    users.push({id:'u_'+Date.now(),...data,role:'employee',active:true});
+    users.push({id:'u_'+Date.now(),...data,role:data.role||'employee',active:true});
     DB.set('users',users);
     lg(CU.id,CU.name,'EMP_ADD','Added: '+data.name); toast('Employee added','success');
   }
@@ -1214,14 +1221,15 @@ function empForm(u){
   </div><div class="grid-2">
     <div class="fg"><label>Emergency Contact</label><input id="ef-emg" type="text" value="${esc(u?u.emergency:'')}"></div>
     <div class="fg"><label>Emergency Phone</label><input id="ef-emgp" type="tel" value="${esc(u?u.emergencyPhone:'')}"></div>
-  </div>`;
+  </div>
+  <div class="fg"><label>Role</label><select id="ef-role"><option value="employee" ${!u||u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u&&u.role==='admin'?'selected':''}>Administrator</option></select></div>`;
 }
 
 function openAddEmp(){ modal('<h3>Add Employee</h3>',empForm(),`<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEmpForm()">Add Employee</button>`); }
 function openEditEmp(uid){ const u=DB.get('users').find(x=>x.id===uid);if(!u)return; modal('<h3>Edit Employee</h3>',empForm(u),`<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEmpForm('${uid}')">Save Changes</button>`); }
 
 function submitEmpForm(eid){
-  saveEmp({name:gv('ef-name'),username:gv('ef-user'),password:gv('ef-pw'),email:gv('ef-email'),dept:gv('ef-dept'),position:gv('ef-pos'),phone:gv('ef-phone'),join:gv('ef-join'),emergency:gv('ef-emg'),emergencyPhone:gv('ef-emgp')},eid||null);
+  saveEmp({name:gv('ef-name'),username:gv('ef-user'),password:gv('ef-pw'),email:gv('ef-email'),dept:gv('ef-dept'),position:gv('ef-pos'),phone:gv('ef-phone'),join:gv('ef-join'),emergency:gv('ef-emg'),emergencyPhone:gv('ef-emgp'),role:gv('ef-role')},eid||null);
 }
 
 // ════════════════════════════════════════════
