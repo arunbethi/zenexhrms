@@ -171,6 +171,60 @@ body {
 }
 .fg input.valid   { border-color: var(--success); }
 .fg input.invalid { border-color: var(--danger); }
+
+/* ── SELECT: custom arrow ── */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px !important;
+  cursor: pointer;
+}
+select option { background: var(--surface); color: var(--text); }
+
+/* ── DATE / MONTH inputs ── */
+input[type="date"], input[type="month"] { cursor: pointer; }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  opacity: 0.5; cursor: pointer; filter: invert(0.4);
+}
+
+/* ── NOTIFICATION PANEL ── */
+.notif-panel {
+  position: fixed; top: 56px; right: 16px; z-index: 999;
+  width: 340px; max-height: 480px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  display: none; flex-direction: column;
+  overflow: hidden;
+}
+.notif-panel.open { display: flex; }
+.notif-panel-hdr {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.notif-panel-hdr span { font-size: 13px; font-weight: 700; color: var(--text); }
+.notif-panel-hdr button { font-size: 11px; color: var(--red); cursor: pointer; background: none; border: none; font-family: var(--font); font-weight: 600; }
+.notif-list { overflow-y: auto; flex: 1; }
+.notif-item {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 10px; align-items: flex-start;
+  transition: background .15s; cursor: default;
+}
+.notif-item:hover { background: var(--muted); }
+.notif-item.unread { background: #FFF5F5; }
+.notif-item.unread:hover { background: #FEE2E2; }
+.notif-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; margin-top: 5px; }
+.notif-dot.read { background: transparent; }
+.notif-body { flex: 1; min-width: 0; }
+.notif-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.notif-msg { font-size: 11px; color: var(--text-3); line-height: 1.4; }
+.notif-time { font-size: 10px; color: #CBD5E1; margin-top: 3px; }
+.notif-empty { padding: 32px 16px; text-align: center; font-size: 12px; color: var(--text-3); }
 .fg-hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
 .fg-error { font-size: 12px; color: var(--danger); margin-top: 4px; display: none; }
 .login-err { font-size: 13px; color: var(--danger); margin-top: var(--s2); display: none; }
@@ -612,9 +666,16 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
       <span class="topbar-title" id="pg-title">Dashboard</span>
       <div class="topbar-right">
         <span class="topbar-date" id="pg-date"></span>
-        <div class="bell-wrap" id="bell-wrap" onclick="navigate('announcements')">
+        <div class="bell-wrap" id="bell-wrap" onclick="toggleNotifPanel()" style="display:block">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="bell-badge" id="bell-cnt"></span>
+          <span class="bell-badge" id="bell-cnt" style="display:none"></span>
+        </div>
+        <div class="notif-panel" id="notif-panel">
+          <div class="notif-panel-hdr">
+            <span>Notifications</span>
+            <button onclick="markAllNotifsRead()">Mark all read</button>
+          </div>
+          <div class="notif-list" id="notif-list"></div>
         </div>
       </div>
     </div>
@@ -739,7 +800,7 @@ const SP = {
   siteId: null,
   listIds: {},
   GRAPH: 'https://graph.microsoft.com/v1.0',
-  SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All'],
+  SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'],
   LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs'],
 
   async token() {
@@ -996,6 +1057,19 @@ function clockOut() {
   const ot=arr[i].overtime?` | OT: +${arr[i].overtime}h`:'';
   lg(CU.id,CU.name,'CLOCK_OUT',`Clocked out at ${f12(now)}, Total: ${arr[i].hours}h${ot}`);
   toast(`Clocked out · ${arr[i].hours}h${arr[i].overtime?' (+'+arr[i].overtime+'h OT)':''}`,arr[i].overtime?'info':'success');
+  const otNote=arr[i].overtime?` (+${arr[i].overtime}h overtime)`:'';
+  addNotif('Clocked Out',`${CU.name} clocked out at ${arr[i].out} · ${arr[i].hours}h${otNote}`,'logout');
+  if(arr[i].overtime){
+    sendEmail(getAdminEmails(),'⚡ Overtime — '+CU.name,emailHtml('Overtime Alert',
+      `<p><b>${CU.name}</b> logged overtime today.</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px">
+         <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Clock-in</td><td>${arr[i].in}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Clock-out</td><td>${arr[i].out}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td>${arr[i].hours}h</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>
+       </table>`));
+  }
   navigate('dashboard');
 }
 
@@ -1038,6 +1112,19 @@ function submitLeave(type,sd,ed,reason) {
   const lv={id:'lv_'+Date.now(),uid:CU.id,uname:CU.name,dept:CU.dept,type,sd,ed,days,reason:reason.trim(),status:'pending',applied:td(),reviewBy:null,reviewOn:null,comment:null};
   const arr=DB.get('leaves'); arr.push(lv); dbSet('leaves',arr);
   lg(CU.id,CU.name,'LEAVE_APPLY',`Applied ${type} leave ${sd} to ${ed}`);
+  addNotif('Leave Request',`${CU.name} applied ${type} leave from ${sd} to ${ed} (${days} day${days>1?'s':''}).`,'leave');
+  sendEmail(getAdminEmails(),`📋 Leave Request — ${CU.name}`,emailHtml('New Leave Request',
+    `<p><b>${CU.name}</b> has submitted a leave request requiring your review.</p>
+     <table style="width:100%;border-collapse:collapse;font-size:13px">
+       <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
+       <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
+       <tr><td style="padding:6px 0;color:#64748B">Leave Type</td><td style="text-transform:capitalize">${type}</td></tr>
+       <tr><td style="padding:6px 0;color:#64748B">From</td><td>${sd}</td></tr>
+       <tr><td style="padding:6px 0;color:#64748B">To</td><td>${ed}</td></tr>
+       <tr><td style="padding:6px 0;color:#64748B">Days</td><td><b>${days}</b></td></tr>
+       <tr><td style="padding:6px 0;color:#64748B">Reason</td><td>${reason}</td></tr>
+     </table>`,
+    'Please log in to HRMS to approve or reject this request.'));
   toast('Leave request submitted','success'); closeModal(); navigate('leaves');
 }
 
@@ -1106,11 +1193,92 @@ function markRead(id) {
   arr[i].readBy.push(CU.id); dbSet('announcements',arr);
 }
 
-function syncBell() {
-  const unread=DB.get('announcements').filter(a=>!a.readBy.includes(CU.id)).length;
-  const wrap=gi('bell-wrap'), cnt=gi('bell-cnt');
-  if (wrap) wrap.style.display=unread>0?'block':'none';
-  if (cnt) cnt.textContent=unread>9?'9+':unread;
+// ════════════════════════════════════════════
+// NOTIFICATION SYSTEM
+// ════════════════════════════════════════════
+function addNotif(title, msg, type) {
+  const notifs = DB.get('notifications');
+  notifs.unshift({id:'n_'+Date.now(), title, msg, type:type||'info', ts:new Date().toISOString(), read:false});
+  if(notifs.length>50) notifs.splice(50);
+  DB.set('notifications', notifs);
+  updateBell();
+}
+function updateBell() {
+  const notifs = DB.get('notifications');
+  const annUnread = DB.get('announcements').filter(a=>!a.readBy.includes(CU.id)).length;
+  const notifUnread = notifs.filter(n=>!n.read).length;
+  const total = notifUnread + annUnread;
+  const cnt = gi('bell-cnt');
+  if (cnt) { cnt.textContent = total>9?'9+':total; cnt.style.display = total>0?'flex':'none'; }
+  renderNotifList();
+}
+function syncBell() { updateBell(); }
+function renderNotifList() {
+  const el = gi('notif-list'); if (!el) return;
+  const notifs = DB.get('notifications');
+  const annUnread = DB.get('announcements').filter(a=>!a.readBy.includes(CU.id));
+  if (!notifs.length && !annUnread.length) { el.innerHTML=`<div class="notif-empty">No notifications yet</div>`; return; }
+  const icons = {late:'⏰', leave:'📋', logout:'👋', summary:'📊', info:'ℹ️'};
+  let html = annUnread.map(a=>`<div class="notif-item unread"><div class="notif-dot"></div><div class="notif-body"><div class="notif-title">📢 ${esc(a.title)}</div><div class="notif-msg">${esc(a.body.substring(0,80))}${a.body.length>80?'…':''}</div><div class="notif-time">${a.date}</div></div></div>`).join('');
+  html += notifs.map(n=>`<div class="notif-item ${n.read?'':'unread'}"><div class="notif-dot ${n.read?'read':''}"></div><div class="notif-body"><div class="notif-title">${icons[n.type]||'🔔'} ${esc(n.title)}</div><div class="notif-msg">${esc(n.msg)}</div><div class="notif-time">${new Date(n.ts).toLocaleString()}</div></div></div>`).join('');
+  el.innerHTML = html;
+}
+function toggleNotifPanel() {
+  const panel = gi('notif-panel');
+  if (!panel) return;
+  const isOpen = panel.classList.contains('open');
+  if (!isOpen) { panel.classList.add('open'); renderNotifList(); }
+  else panel.classList.remove('open');
+}
+function markAllNotifsRead() {
+  const notifs = DB.get('notifications').map(n=>({...n,read:true}));
+  DB.set('notifications',notifs);
+  DB.get('announcements').forEach(a=>markRead(a.id));
+  updateBell();
+  gi('notif-panel').classList.remove('open');
+}
+document.addEventListener('click',e=>{
+  const panel=gi('notif-panel'), bell=gi('bell-wrap');
+  if(panel&&bell&&!panel.contains(e.target)&&!bell.contains(e.target)) panel.classList.remove('open');
+});
+
+// ════════════════════════════════════════════
+// EMAIL NOTIFICATIONS (Microsoft Graph)
+// ════════════════════════════════════════════
+async function sendEmail(toEmails, subject, htmlBody) {
+  if (!_msalInstance || !toEmails || !toEmails.length) return;
+  try {
+    const token = await SP.token();
+    const msg = {
+      message: {
+        subject,
+        body: { contentType:'HTML', content:htmlBody },
+        toRecipients: toEmails.map(e=>({emailAddress:{address:e}}))
+      },
+      saveToSentItems: false
+    };
+    await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body: JSON.stringify(msg)
+    });
+  } catch(e) { console.warn('Email send failed:', e.message); }
+}
+function getAdminEmails() {
+  return DB.get('users').filter(u=>u.role==='admin'&&u.active&&u.email).map(u=>u.email);
+}
+function emailHtml(title, rows, footer) {
+  return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+    <div style="background:#0F172A;padding:20px 24px;border-radius:8px 8px 0 0">
+      <h2 style="color:#fff;margin:0;font-size:18px">Zenex Partners HRMS</h2>
+      <p style="color:#94A3B8;margin:4px 0 0;font-size:13px">${title}</p>
+    </div>
+    <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none">
+      ${rows}
+    </div>
+    <div style="background:#f1f5f9;padding:12px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;font-size:11px;color:#94A3B8">
+      ${footer||'This is an automated notification from Zenex Partners HRMS.'}
+    </div>
+  </div>`;
 }
 
 // ════════════════════════════════════════════
@@ -1225,6 +1393,41 @@ function showAppUI() {
   gi('sb-role').textContent=CU.role==='admin'?'Administrator':CU.dept;
   gi('sb-av').textContent=ini(CU.name);
   buildNav(); startClock(); syncBell(); navigate('dashboard');
+  if(CU.role==='admin') setTimeout(trySendDailySummary, 2000);
+}
+function trySendDailySummary() {
+  const key='zp_summary_'+td();
+  if(localStorage.getItem(key)) return;
+  localStorage.setItem(key,'1');
+  const att=DB.get('attendance').filter(r=>r.date===td());
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const present=att.filter(r=>!r.wfh).length;
+  const wfh=att.filter(r=>r.wfh).length;
+  const late=att.filter(r=>r.late).length;
+  const absent=users.length-att.length;
+  const rows=att.map(r=>{
+    const u=DB.get('users').find(x=>x.id===r.uid);
+    return `<tr style="border-bottom:1px solid #e2e8f0">
+      <td style="padding:7px 8px">${u?u.name:r.uid}</td>
+      <td style="padding:7px 8px">${u?u.dept:''}</td>
+      <td style="padding:7px 8px">${r.wfh?'WFH':'Office'}</td>
+      <td style="padding:7px 8px">${r.in}</td>
+      <td style="padding:7px 8px">${r.out||'—'}</td>
+      <td style="padding:7px 8px;color:${r.late?'#CC1414':'#10B981'}">${r.late?'Late':'On Time'}</td>
+    </tr>`;}).join('');
+  const summary=emailHtml(`Daily Attendance Summary — ${td()}`,
+    `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;color:#10B981">${present}</div><div style="font-size:11px;color:#64748B">Office</div></div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;color:#0369A1">${wfh}</div><div style="font-size:11px;color:#64748B">WFH</div></div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;color:#CC1414">${late}</div><div style="font-size:11px;color:#64748B">Late</div></div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;color:#94A3B8">${absent}</div><div style="font-size:11px;color:#64748B">Absent</div></div>
+    </div>
+    ${att.length?`<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f1f5f9"><th style="padding:8px;text-align:left">Name</th><th style="padding:8px;text-align:left">Dept</th><th style="padding:8px;text-align:left">Mode</th><th style="padding:8px;text-align:left">In</th><th style="padding:8px;text-align:left">Out</th><th style="padding:8px;text-align:left">Status</th></tr></thead>
+      <tbody>${rows}</tbody></table>`:'<p style="color:#94A3B8">No attendance recorded yet today.</p>'}`,
+    `Summary generated at ${new Date().toLocaleTimeString()} on ${td()}`);
+  addNotif('Daily Summary',`Today: ${present} office, ${wfh} WFH, ${late} late, ${absent} absent.`,'summary');
+  sendEmail(getAdminEmails(),`📊 Daily Attendance Summary — ${td()}`,summary);
 }
 
 function buildNav() {
@@ -2057,9 +2260,28 @@ function clearAllData(){if(!confirm('Delete ALL data? This cannot be undone.'))r
 const _pgLeavesOrig=pgLeaves;
 function pgLeaves(){_pgLeavesOrig();const b=getBalance(CU.id);gi('page-body').innerHTML=`<div class="stat-grid" style="margin-bottom:20px"><div class="scard b"><div class="scard-val">${b.annual}</div><div class="scard-label">Annual Left</div></div><div class="scard g"><div class="scard-val">${b.sick}</div><div class="scard-label">Sick Left</div></div><div class="scard o"><div class="scard-val">${b.casual}</div><div class="scard-label">Casual Left</div></div><div class="scard"><div class="scard-val">${b.emergency}</div><div class="scard-label">Emergency Left</div></div></div>`+gi('page-body').innerHTML;}
 
-// Patch clockIn to flag late arrivals
+// Patch clockIn — late detection + notifications
 const _clockInOrig=clockIn;
-function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{const arr=DB.get('attendance');const i=arr.findIndex(r=>r.uid===CU.id&&r.date===td());if(i>=0&&!arr[i].late&&isLate(arr[i].in)){arr[i].late=true;dbSet('attendance',arr);}},300);}
+function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{
+  const arr=DB.get('attendance');
+  const i=arr.findIndex(r=>r.uid===CU.id&&r.date===td());
+  if(i>=0&&!arr[i].late&&isLate(arr[i].in)){
+    arr[i].late=true;dbSet('attendance',arr);
+    const s=DB.one('settings')||{};
+    const msg=`${CU.name} clocked in at ${arr[i].in} (office start: ${s.officeStart||'09:00'}) on ${td()}`;
+    addNotif('Late Clock-in',msg,'late');
+    const emails=getAdminEmails();
+    sendEmail(emails,'⏰ Late Arrival — '+CU.name,emailHtml('Late Arrival Alert',
+      `<p><b>${CU.name}</b> (${CU.dept}) clocked in late.</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px">
+         <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Clock-in Time</td><td style="color:#CC1414;font-weight:700">${arr[i].in}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Office Start</td><td>${s.officeStart||'09:00'}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
+       </table>`));
+  }
+},300);}
 
 // ════════════════════════════════════════════
 // INIT
