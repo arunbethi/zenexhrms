@@ -883,18 +883,39 @@ const DB = {
   setOne:(k,v)=>localStorage.setItem('zp_'+k,JSON.stringify(v))
 };
 
+const DEMO_USERS = [
+  {id:'u1',name:'Admin User',username:'admin',password:'admin123',role:'admin',dept:'Management',position:'HR Administrator',join:'2024-01-01',active:true,email:'admin@zenexpartners.com',phone:'555-0100',emergency:'',emergencyPhone:''},
+  {id:'u2',name:'John Doe',username:'john',password:'emp123',role:'employee',dept:'Engineering',position:'Software Engineer',join:'2024-03-15',active:true,email:'john@zenexpartners.com',phone:'555-0101',emergency:'Jane Doe',emergencyPhone:'555-0200'},
+  {id:'u3',name:'Jane Smith',username:'jane',password:'emp123',role:'employee',dept:'Marketing',position:'Marketing Manager',join:'2024-02-01',active:true,email:'jane@zenexpartners.com',phone:'555-0102',emergency:'Bob Smith',emergencyPhone:'555-0201'}
+];
+
 function seed() {
-  if (localStorage.getItem('zp_v3')) return;
-  DB.set('users',[
-    {id:'u1',name:'Admin User',username:'admin',password:'admin123',role:'admin',dept:'Management',position:'HR Administrator',join:'2024-01-01',active:true,email:'admin@zenexpartners.com',phone:'555-0100',emergency:'',emergencyPhone:''},
-    {id:'u2',name:'John Doe',username:'john',password:'emp123',role:'employee',dept:'Engineering',position:'Software Engineer',join:'2024-03-15',active:true,email:'john@zenexpartners.com',phone:'555-0101',emergency:'Jane Doe',emergencyPhone:'555-0200'},
-    {id:'u3',name:'Jane Smith',username:'jane',password:'emp123',role:'employee',dept:'Marketing',position:'Marketing Manager',join:'2024-02-01',active:true,email:'jane@zenexpartners.com',phone:'555-0102',emergency:'Bob Smith',emergencyPhone:'555-0201'}
-  ]);
-  DB.set('attendance',[]); DB.set('breaks',[]);
-  DB.set('leaves',[]); DB.set('logs',[]);
-  DB.set('documents',[]);
-  DB.set('announcements',[{id:'ann_1',title:'Welcome to Zenex Partners HRMS',body:'Welcome to the HR Management System. Please clock in daily and use the leave request feature for planned absences.',type:'info',priority:'normal',by:'Admin User',date:td(),readBy:[]}]);
-  localStorage.setItem('zp_v3','1');
+  // Always ensure demo users exist (survives SP sync overwrites)
+  let users = DB.get('users');
+  let changed = false;
+  DEMO_USERS.forEach(du => {
+    if (!users.find(u => u.id === du.id)) { users.push(du); changed = true; }
+  });
+  if (changed) DB.set('users', users);
+
+  // One-time setup for empty collections
+  if (!localStorage.getItem('zp_v4')) {
+    if (!DB.get('announcements').length) {
+      DB.set('announcements',[{id:'ann_1',title:'Welcome to Zenex Partners HRMS',body:'Welcome to the HR Management System. Please clock in daily and use the leave request feature for planned absences.',type:'info',priority:'normal',by:'Admin User',date:td(),readBy:[]}]);
+    }
+    ['attendance','breaks','leaves','logs','documents'].forEach(k=>{ if(!localStorage.getItem('zp_'+k)) DB.set(k,[]); });
+    localStorage.setItem('zp_v4','1');
+  }
+  ensureBalances();
+}
+
+function ensureBalances(){
+  const yr=new Date().getFullYear();
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  let bal=DB.get('leaveBalances'); let changed=false;
+  users.forEach(u=>{ if(!bal.find(b=>b.uid===u.id&&b.year===yr)){bal.push({id:'bal_'+u.id+'_'+yr,uid:u.id,year:yr,annual:20,sick:10,casual:7,emergency:3});changed=true;}});
+  if(changed) DB.set('leaveBalances',bal);
+  if(!DB.one('settings')) DB.setOne('settings',{officeStart:'09:00',officeEnd:'18:00',orgName:'Zenex Partners'});
 }
 
 // ════════════════════════════════════════════
@@ -1020,6 +1041,7 @@ function reviewLeave(id,status,comment) {
   if (i<0) return toast('Not found','error');
   arr[i].status=status; arr[i].reviewBy=CU.name; arr[i].reviewOn=td(); arr[i].comment=comment||'';
   dbSet('leaves',arr);
+  if(status==='approved') deductBalance(arr[i]);
   lg(CU.id,CU.name,'LEAVE_REVIEW',`${status} leave of ${arr[i].uname}`);
   toast('Leave '+status,'success'); closeModal(); navigate('leaves-admin');
 }
@@ -1166,6 +1188,10 @@ const PAGES = {
     {id:'leaves-admin',icon:iCal(),label:'Leave Requests'},
     {id:'announcements-admin',icon:iBell(),label:'Announcements'},
     {id:'documents-admin',icon:iDoc(),label:'Documents'},
+    {id:'team-calendar',icon:iCal2(),label:'Team Calendar'},
+    {id:'directory',icon:iDir(),label:'Directory'},
+    {id:'leave-balances',icon:iStar(),label:'Leave Balances'},
+    {id:'settings',icon:iGear(),label:'Settings'},
     {id:'logs',icon:iLog(),label:'Activity Logs'},
     {id:'reports',icon:iBar(),label:'Reports'},
   ],
@@ -1174,6 +1200,7 @@ const PAGES = {
     {id:'my-att',icon:iCk(),label:'My Attendance'},
     {id:'leaves',icon:iCal(),label:'Leave Requests'},
     {id:'announcements',icon:iBell(),label:'Announcements'},
+    {id:'directory',icon:iDir(),label:'Directory'},
     {id:'profile',icon:iPerson(),label:'My Profile'},
   ]
 };
@@ -1205,10 +1232,10 @@ function navigate(pid) {
     const el=gi('ni-'+p.id);
     if(el) el.classList.toggle('active',p.id===pid);
   });
-  const titles={dashboard:'Dashboard',employees:'Employees','att-admin':'Attendance','leaves-admin':'Leave Requests','announcements-admin':'Announcements','documents-admin':'Documents',logs:'Activity Logs',reports:'Reports','my-att':'My Attendance',leaves:'Leave Requests',announcements:'Announcements',profile:'My Profile'};
+  const titles={dashboard:'Dashboard',employees:'Employees','att-admin':'Attendance','leaves-admin':'Leave Requests','announcements-admin':'Announcements','documents-admin':'Documents','team-calendar':'Team Calendar',directory:'Directory','leave-balances':'Leave Balances',settings:'Settings',logs:'Activity Logs',reports:'Reports','my-att':'My Attendance',leaves:'Leave Requests',announcements:'Announcements',profile:'My Profile'};
   gi('pg-title').textContent=titles[pid]||pid;
   gi('pg-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  const renders={dashboard:pgDash,employees:pgEmps,'att-admin':pgAtt,'leaves-admin':pgLeavesAdmin,'announcements-admin':pgAnnAdmin,'documents-admin':pgDocsAdmin,logs:pgLogs,reports:pgReports,'my-att':pgMyAtt,leaves:pgLeaves,announcements:pgAnn,profile:pgProfile};
+  const renders={dashboard:pgDash,employees:pgEmps,'att-admin':pgAtt,'leaves-admin':pgLeavesAdmin,'announcements-admin':pgAnnAdmin,'documents-admin':pgDocsAdmin,'team-calendar':pgTeamCal,directory:pgDirectory,'leave-balances':pgLeaveBalances,settings:pgSettings,logs:pgLogs,reports:pgReports,'my-att':pgMyAtt,leaves:pgLeaves,announcements:pgAnn,profile:pgProfile};
   const fn=renders[pid];
   if(fn) fn(); else gi('page-body').innerHTML='<p style="padding:24px;color:var(--text-3)">Page not found</p>';
 }
@@ -1864,6 +1891,170 @@ function iBar(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="non
 function iPerson(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}
 function iDoc(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`}
 
+function iCal2(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`}
+function iDir(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-2-3.87"/><circle cx="19" cy="11" r="2"/></svg>`}
+function iStar(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`}
+function iGear(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`}
+
+function getBalance(uid){const yr=new Date().getFullYear();return DB.get('leaveBalances').find(b=>b.uid===uid&&b.year===yr)||{annual:20,sick:10,casual:7,emergency:3};}
+function deductBalance(leave){const yr=new Date().getFullYear();const bal=DB.get('leaveBalances');const i=bal.findIndex(b=>b.uid===leave.uid&&b.year===yr);if(i<0)return;const key={annual:'annual',sick:'sick',casual:'casual',emergency:'emergency'}[leave.type]||'annual';bal[i][key]=Math.max(0,(bal[i][key]||0)-leave.days);DB.set('leaveBalances',bal);}
+function isLate(inTime){const s=DB.one('settings');if(!s)return false;return tms(inTime)>tms(s.officeStart+':00');}
+function balBar(rem,total,color){const pct=total>0?Math.round((rem/total)*100):0;return `<div style="height:4px;background:var(--border);border-radius:2px;width:80px;margin-top:3px"><div style="height:4px;width:${pct}%;background:${color};border-radius:2px"></div></div>`;}
+
+function pgTeamCal(){
+  const now=new Date();
+  const selM=gi('tc-month')?gi('tc-month').value:(now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0'));
+  const [yr,mo]=selM.split('-').map(Number);
+  const daysInMonth=new Date(yr,mo,0).getDate();
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const att=DB.get('attendance');const leaves=DB.get('leaves').filter(l=>l.status==='approved');
+  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <button class="btn btn-ghost btn-sm" onclick="tcNav(-1,'${selM}')">&#8592; Prev</button>
+    <input type="month" id="tc-month" value="${selM}" onchange="pgTeamCal()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
+    <button class="btn btn-ghost btn-sm" onclick="tcNav(1,'${selM}')">Next &#8594;</button>
+    <div style="margin-left:auto;display:flex;gap:12px;font-size:11px;color:var(--text-3)">
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10B981;margin-right:4px"></span>Office</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#0369A1;margin-right:4px"></span>WFH</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#F59E0B;margin-right:4px"></span>Leave</span>
+    </div>
+  </div>`;
+  const lookup={};
+  att.forEach(r=>{lookup[r.uid+'_'+r.date]=r.wfh?'wfh':'present';});
+  leaves.forEach(l=>{let d=new Date(l.sd+'T12:00:00');const end=new Date(l.ed+'T12:00:00');while(d<=end){const ds=d.toISOString().split('T')[0];lookup[l.uid+'_'+ds]='leave';d.setDate(d.getDate()+1);}});
+  html+=`<div class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:600px"><thead><tr>
+    <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-3);background:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;left:0;z-index:2;min-width:140px">Employee</th>`;
+  for(let d=1;d<=daysInMonth;d++){const date=new Date(yr,mo-1,d);const isW=date.getDay()===0||date.getDay()===6;const isT=date.toISOString().split('T')[0]===td();html+=`<th style="padding:5px 3px;text-align:center;font-size:10px;font-weight:${isT?800:600};color:${isT?'var(--red)':isW?'#CBD5E1':'var(--text-2)'};background:${isT?'#FEF2F2':isW?'#F1F5F9':'var(--muted)'};border-bottom:1px solid var(--border);min-width:26px">${d}<br><span style="font-size:8px;font-weight:400">${['S','M','T','W','T','F','S'][date.getDay()]}</span></th>`;}
+  html+=`</tr></thead><tbody>`;
+  users.forEach(u=>{
+    html+=`<tr><td style="padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;left:0;z-index:1"><div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="width:22px;height:22px;font-size:8px;flex-shrink:0">${ini(u.name)}</div>${esc(u.name)}</div></td>`;
+    for(let d=1;d<=daysInMonth;d++){const ds=yr+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');const date=new Date(yr,mo-1,d);const isW=date.getDay()===0||date.getDay()===6;const st=lookup[u.id+'_'+ds];const dot=st==='present'?'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10B981"></span>':st==='wfh'?'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#0369A1"></span>':st==='leave'?'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#F59E0B"></span>':'';html+=`<td style="text-align:center;padding:3px 2px;border-bottom:1px solid var(--border);background:${isW?'#F8FAFC':'var(--surface)'}">${dot}</td>`;}
+    html+=`</tr>`;
+  });
+  html+=`</tbody></table></div></div>`;
+  gi('page-body').innerHTML=html;
+}
+function tcNav(dir,cur){const [yr,mo]=cur.split('-').map(Number);const nd=new Date(yr,mo-1+dir,1);const nv=nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0');setTimeout(()=>{const el=gi('tc-month');if(el){el.value=nv;pgTeamCal();}},10);}
+
+function pgDirectory(){
+  const users=DB.get('users').filter(u=>u.active);
+  let html=`<div class="filter-bar" style="margin-bottom:20px"><input type="text" id="dir-q" placeholder="Search name, department or position..." oninput="filterDir(this.value)" style="max-width:360px"></div><div id="dir-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px">${dirCards(users)}</div>`;
+  gi('page-body').innerHTML=html;
+}
+function dirCards(users){
+  if(!users.length) return`<div style="grid-column:1/-1"><div class="empty-state">No employees found</div></div>`;
+  const cols=['#CC1414','#0369A1','#10B981','#F59E0B','#7C3AED','#0891B2','#DC2626','#65A30D'];
+  return users.map((u,i)=>`<div class="card" style="padding:20px;text-align:center;cursor:default;transition:box-shadow .2s" onmouseover="this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.boxShadow=''">
+    <div style="width:50px;height:50px;border-radius:50%;background:${cols[i%cols.length]};display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#fff;margin:0 auto 12px">${ini(u.name)}</div>
+    <div style="font-size:14px;font-weight:700;color:var(--text)">${esc(u.name)}</div>
+    <div style="font-size:11px;font-weight:600;color:var(--red);margin:2px 0">${esc(u.position||'')}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">${esc(u.dept)}</div>
+    ${u.role==='admin'?`<span class="badge br" style="margin-bottom:8px">Admin</span>`:''}
+    <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:3px">
+      ${u.email?`<a href="mailto:${esc(u.email)}" style="font-size:11px;color:var(--info);text-decoration:none;word-break:break-all">&#9993; ${esc(u.email)}</a>`:''}
+      ${u.phone?`<span style="font-size:11px;color:var(--text-3)">&#128222; ${esc(u.phone)}</span>`:''}
+    </div>
+  </div>`).join('');
+}
+function filterDir(q){const ql=q.toLowerCase();gi('dir-grid').innerHTML=dirCards(DB.get('users').filter(u=>u.active&&(u.name.toLowerCase().includes(ql)||u.dept.toLowerCase().includes(ql)||(u.position||'').toLowerCase().includes(ql))));}
+
+function pgLeaveBalances(){
+  ensureBalances();
+  const yr=new Date().getFullYear();
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const bal=DB.get('leaveBalances');
+  let html=`<div class="sec-hdr" style="margin-bottom:20px">
+    <span style="font-size:13px;color:var(--text-3)">Year <b>${yr}</b> &mdash; Default allocations: Annual 20 / Sick 10 / Casual 7 / Emergency 3</span>
+    <button class="btn btn-ghost btn-sm" onclick="resetAllBalances()">Reset All to Default</button>
+  </div>
+  <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Annual</th><th>Sick</th><th>Casual</th><th>Emergency</th><th>Actions</th></tr></thead><tbody>`;
+  users.forEach(u=>{
+    const b=bal.find(x=>x.uid===u.id&&x.year===yr)||{annual:20,sick:10,casual:7,emergency:3};
+    const used=DB.get('leaves').filter(l=>l.uid===u.id&&l.status==='approved'&&l.sd&&l.sd.startsWith(yr));
+    const ua=used.filter(l=>l.type==='annual').reduce((s,l)=>s+l.days,0);
+    const us=used.filter(l=>l.type==='sick').reduce((s,l)=>s+l.days,0);
+    const uc=used.filter(l=>l.type==='casual').reduce((s,l)=>s+l.days,0);
+    const ue=used.filter(l=>l.type==='emergency').reduce((s,l)=>s+l.days,0);
+    html+=`<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.dept)}</td>
+      <td><b style="color:#0369A1">${b.annual}d</b><br><span style="font-size:11px;color:var(--text-3)">${ua} used</span>${balBar(b.annual,b.annual+ua,'#0369A1')}</td>
+      <td><b style="color:#10B981">${b.sick}d</b><br><span style="font-size:11px;color:var(--text-3)">${us} used</span>${balBar(b.sick,b.sick+us,'#10B981')}</td>
+      <td><b style="color:#F59E0B">${b.casual}d</b><br><span style="font-size:11px;color:var(--text-3)">${uc} used</span>${balBar(b.casual,b.casual+uc,'#F59E0B')}</td>
+      <td><b style="color:#CC1414">${b.emergency}d</b><br><span style="font-size:11px;color:var(--text-3)">${ue} used</span>${balBar(b.emergency,b.emergency+ue,'#CC1414')}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openEditBal('${u.id}','${esc(u.name)}')">Edit</button></td></tr>`;
+  });
+  html+=`</tbody></table></div></div>`;
+  gi('page-body').innerHTML=html;
+}
+function openEditBal(uid,uname){
+  const yr=new Date().getFullYear();
+  const b=DB.get('leaveBalances').find(x=>x.uid===uid&&x.year===yr)||{annual:20,sick:10,casual:7,emergency:3};
+  modal(`<h3>Leave Balance &mdash; ${esc(uname)}</h3>`,
+    `<p style="font-size:12px;color:var(--text-3);margin-bottom:14px">Remaining days for ${yr}</p>
+     <div class="grid-2">
+       <div class="fg"><label>Annual Leave</label><input id="eb-a" type="number" min="0" max="365" value="${b.annual}"></div>
+       <div class="fg"><label>Sick Leave</label><input id="eb-s" type="number" min="0" max="365" value="${b.sick}"></div>
+       <div class="fg"><label>Casual Leave</label><input id="eb-c" type="number" min="0" max="365" value="${b.casual}"></div>
+       <div class="fg"><label>Emergency</label><input id="eb-e" type="number" min="0" max="365" value="${b.emergency}"></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveBalance('${uid}')">Save</button>`);
+}
+function saveBalance(uid){
+  const yr=new Date().getFullYear();const bal=DB.get('leaveBalances');
+  let i=bal.findIndex(b=>b.uid===uid&&b.year===yr);
+  const upd={id:'bal_'+uid+'_'+yr,uid,year:yr,annual:+gi('eb-a').value||0,sick:+gi('eb-s').value||0,casual:+gi('eb-c').value||0,emergency:+gi('eb-e').value||0};
+  if(i>=0)bal[i]=upd;else bal.push(upd);
+  DB.set('leaveBalances',bal);toast('Balance updated','success');closeModal();navigate('leave-balances');
+}
+function resetAllBalances(){
+  if(!confirm('Reset ALL employees to default balances?'))return;
+  const yr=new Date().getFullYear();
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const bal=DB.get('leaveBalances').filter(b=>b.year!==yr);
+  users.forEach(u=>bal.push({id:'bal_'+u.id+'_'+yr,uid:u.id,year:yr,annual:20,sick:10,casual:7,emergency:3}));
+  DB.set('leaveBalances',bal);toast('All balances reset','success');navigate('leave-balances');
+}
+
+function pgSettings(){
+  const s=DB.one('settings')||{officeStart:'09:00',officeEnd:'18:00',orgName:'Zenex Partners'};
+  gi('page-body').innerHTML=`<div style="max-width:520px">
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">Organisation</span></div>
+      <div class="card-body"><div class="fg"><label>Organisation Name</label><input id="st-org" type="text" value="${esc(s.orgName||'Zenex Partners')}"></div></div>
+    </div>
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">Office Hours</span></div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--text-3);margin-bottom:14px">Used to automatically flag late clock-ins in attendance.</p>
+        <div class="grid-2">
+          <div class="fg"><label>Office Start</label><input id="st-s" type="time" value="${s.officeStart||'09:00'}"></div>
+          <div class="fg"><label>Office End</label><input id="st-e" type="time" value="${s.officeEnd||'18:00'}"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">Data Management</span></div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--text-3);margin-bottom:14px">Danger zone.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="exportEmps()">Export Employees CSV</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportAtt()">Export Attendance CSV</button>
+          <button class="btn btn-danger btn-sm" onclick="clearAllData()">Clear All Data</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+  </div>`;
+}
+function saveSettings(){DB.setOne('settings',{orgName:gi('st-org').value,officeStart:gi('st-s').value,officeEnd:gi('st-e').value});toast('Settings saved','success');}
+function clearAllData(){if(!confirm('Delete ALL data? This cannot be undone.'))return;['attendance','breaks','leaves','logs','documents','announcements','leaveBalances'].forEach(k=>DB.set(k,[]));localStorage.removeItem('zp_v4');toast('All data cleared','info');navigate('dashboard');}
+
+// Patch pgLeaves to prepend balance cards
+const _pgLeavesOrig=pgLeaves;
+function pgLeaves(){_pgLeavesOrig();const b=getBalance(CU.id);gi('page-body').innerHTML=`<div class="stat-grid" style="margin-bottom:20px"><div class="scard b"><div class="scard-val">${b.annual}</div><div class="scard-label">Annual Left</div></div><div class="scard g"><div class="scard-val">${b.sick}</div><div class="scard-label">Sick Left</div></div><div class="scard o"><div class="scard-val">${b.casual}</div><div class="scard-label">Casual Left</div></div><div class="scard"><div class="scard-val">${b.emergency}</div><div class="scard-label">Emergency Left</div></div></div>`+gi('page-body').innerHTML;}
+
+// Patch clockIn to flag late arrivals
+const _clockInOrig=clockIn;
+function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{const arr=DB.get('attendance');const i=arr.findIndex(r=>r.uid===CU.id&&r.date===td());if(i>=0&&!arr[i].late&&isLate(arr[i].in)){arr[i].late=true;dbSet('attendance',arr);}},300);}
+
 // ════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════
@@ -1871,7 +2062,6 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&gi('login-page').style.display!=='none') doLogin();
   if(e.key==='Escape') closeModal();
 });
-
 seed();
 restore();
 </script>
