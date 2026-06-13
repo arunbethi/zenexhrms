@@ -212,7 +212,13 @@ body {
   display: flex; flex-direction: column;
   position: sticky; top: 0; height: 100vh;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #1E293B #0F172A;
 }
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-track { background: #0F172A; }
+.sidebar::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 4px; }
+.sidebar::-webkit-scrollbar-thumb:hover { background: #334155; }
 .sb-logo {
   padding: var(--s5) var(--s4) var(--s4);
   border-bottom: 1px solid rgba(255,255,255,.06);
