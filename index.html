@@ -1821,13 +1821,24 @@ function pgMyAtt() {
 // PAGE: LEAVES (Employee)
 // ════════════════════════════════════════════
 function pgLeaves() {
+  const b=getBalance(CU.id);
   const myLv=DB.get('leaves').filter(l=>l.uid===CU.id).reverse();
-  let html=`<div class="sec-hdr"><div></div><button class="btn btn-primary" onclick="openApply()">+ Apply for Leave</button></div>
+  // Balance summary
+  let html=`<div class="stat-grid" style="margin-bottom:18px">
+    <div class="scard b"><div class="scard-val">${b.annual}</div><div class="scard-label">Annual Left</div></div>
+    <div class="scard g"><div class="scard-val">${b.sick}</div><div class="scard-label">Sick Left</div></div>
+    <div class="scard o"><div class="scard-val">${b.casual}</div><div class="scard-label">Casual Left</div></div>
+    <div class="scard"><div class="scard-val">${b.emergency}</div><div class="scard-label">Emergency Left</div></div>
+  </div>
+  <div class="sec-hdr" style="margin-bottom:14px">
+    <span style="font-size:13px;font-weight:600;color:var(--text)">My Leave History</span>
+    <button class="btn btn-primary" onclick="openApply()">+ Apply for Leave</button>
+  </div>
   <div class="card"><div class="tbl-wrap">
   <table><thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Comment</th></tr></thead>
   <tbody>`;
-  if (!myLv.length) html+=`<tr><td colspan="7"><div class="empty-state">No leave requests yet</div></td></tr>`;
-  else myLv.forEach(l=>{ html+=`<tr><td>${lvbadge(l.type)}</td><td>${fdate(l.sd)}</td><td>${fdate(l.ed)}</td><td>${l.days}</td><td title="${esc(l.reason)}">${esc(l.reason.length>30?l.reason.slice(0,30)+'…':l.reason)}</td><td>${sbadge(l.status)}</td><td>${esc(l.comment||'--')}</td></tr>`; });
+  if (!myLv.length) html+=`<tr><td colspan="7"><div class="empty-state">No leave requests yet. Use the button above to apply.</div></td></tr>`;
+  else myLv.forEach(l=>{ html+=`<tr><td>${lvbadge(l.type)}</td><td>${fdate(l.sd)}</td><td>${fdate(l.ed)}</td><td>${l.days}</td><td title="${esc(l.reason)}">${esc(l.reason.length>40?l.reason.slice(0,40)+'…':l.reason)}</td><td>${sbadge(l.status)}</td><td>${esc(l.comment||'--')}</td></tr>`; });
   html+=`</tbody></table></div></div>`;
   gi('page-body').innerHTML=html;
 }
@@ -2382,8 +2393,7 @@ function saveSettings(){DB.setOne('settings',{orgName:gi('st-org').value,officeS
 function clearAllData(){if(!confirm('Delete ALL data? This cannot be undone.'))return;['attendance','breaks','leaves','logs','documents','announcements','leaveBalances'].forEach(k=>DB.set(k,[]));localStorage.removeItem('zp_v4');toast('All data cleared','info');navigate('dashboard');}
 
 // Patch pgLeaves to prepend balance cards
-const _pgLeavesOrig=pgLeaves;
-function pgLeaves(){_pgLeavesOrig();const b=getBalance(CU.id);gi('page-body').innerHTML=`<div class="stat-grid" style="margin-bottom:20px"><div class="scard b"><div class="scard-val">${b.annual}</div><div class="scard-label">Annual Left</div></div><div class="scard g"><div class="scard-val">${b.sick}</div><div class="scard-label">Sick Left</div></div><div class="scard o"><div class="scard-val">${b.casual}</div><div class="scard-label">Casual Left</div></div><div class="scard"><div class="scard-val">${b.emergency}</div><div class="scard-label">Emergency Left</div></div></div>`+gi('page-body').innerHTML;}
+// pgLeaves now fully handles balance cards inline
 
 // Patch clockIn — late detection + notifications
 const _clockInOrig=clockIn;
@@ -2772,19 +2782,50 @@ function runPayroll(period){
 }
 function pgPayslipsAdmin(){
   const now=new Date(); const selM=gi('pa-month')?gi('pa-month').value:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const slips=DB.get('payslips').filter(p=>p.period===selM);
-  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+  const selDept=gi('pa-dept')?gi('pa-dept').value:'';
+  const allSlips=DB.get('payslips').filter(p=>p.period===selM);
+  const depts=[...new Set(allSlips.map(s=>s.dept))].sort();
+  const slips=selDept?allSlips.filter(s=>s.dept===selDept):allSlips;
+  const totalNet=slips.reduce((s,p)=>s+p.net,0);
+  let html=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap">
     <input type="month" id="pa-month" value="${selM}" onchange="pgPayslipsAdmin()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
-    <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips</span>
+    <select id="pa-dept" onchange="pgPayslipsAdmin()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 28px 6px 12px;font-family:var(--font);font-size:13px">
+      <option value="">All Departments</option>${depts.map(d=>`<option value="${d}" ${selDept===d?'selected':''}>${d}</option>`).join('')}
+    </select>
+    <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips · Total net: <b style="color:#10B981">₹${totalNet.toLocaleString()}</b></span>
+    ${slips.length?`<button class="btn btn-ghost btn-sm" onclick="exportPayrollCSV('${selM}')">Export CSV</button>`:''}
   </div>`;
-  const rows=slips.map(s=>`<tr><td><b>${esc(s.uname)}</b></td><td>${esc(s.dept)}</td><td>₹${s.gross.toLocaleString()}</td><td>₹${s.deductions.toLocaleString()}</td><td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td><td><button class="btn btn-ghost btn-sm" onclick="viewPayslip('${s.id}')">View</button></td></tr>`);
-  html+=tbl(['Employee','Dept','Gross','Deductions','Net',''],rows,'No payslips for this month');
+  const rows=slips.map(s=>`<tr><td><b>${esc(s.uname)}</b></td><td>${esc(s.dept)}</td><td>₹${s.basic.toLocaleString()}</td><td>₹${s.gross.toLocaleString()}</td><td style="color:#CC1414">- ₹${s.deductions.toLocaleString()}</td><td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td><td><button class="btn btn-primary btn-sm" onclick="viewPayslip('${s.id}')">View</button></td></tr>`);
+  html+=tbl(['Employee','Dept','Basic','Gross','Deductions','Net Pay',''],rows,'No payslips for this month. Go to Payroll and click "Run Payroll".');
   gi('page-body').innerHTML=html;
 }
+function exportPayrollCSV(period){
+  const slips=DB.get('payslips').filter(p=>p.period===period);
+  exportCSV(slips.map(s=>[s.uname,s.dept,s.period,s.basic,s.hra,s.ta,s.allowances,s.gross,s.pf,s.pt,s.tax,s.deductions,s.net]),['Name','Dept','Period','Basic','HRA','TA','Allowances','Gross','PF','Prof Tax','Income Tax','Total Deductions','Net Pay'],'payroll_'+period+'.csv');
+}
 function pgMyPayslips(){
-  const slips=DB.get('payslips').filter(p=>p.uid===CU.id).sort((a,b)=>b.period.localeCompare(a.period));
-  const rows=slips.map(s=>`<tr><td><b>${s.period}</b></td><td>₹${s.gross.toLocaleString()}</td><td>₹${s.deductions.toLocaleString()}</td><td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td><td><button class="btn btn-ghost btn-sm" onclick="viewPayslip('${s.id}')">View / Download</button></td></tr>`);
-  gi('page-body').innerHTML=tbl(['Period','Gross','Deductions','Net Pay',''],rows,'No payslips yet. Ask admin to run payroll.');
+  const allSlips=DB.get('payslips').filter(p=>p.uid===CU.id).sort((a,b)=>b.period.localeCompare(a.period));
+  const selY=gi('psy-yr')?gi('psy-yr').value:'';
+  const years=[...new Set(allSlips.map(s=>String(s.year)))].sort((a,b)=>b-a);
+  const slips=selY?allSlips.filter(s=>String(s.year)===selY):allSlips;
+  const totalNet=slips.reduce((s,p)=>s+p.net,0);
+  const totalGross=slips.reduce((s,p)=>s+p.gross,0);
+  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+    <select id="psy-yr" onchange="pgMyPayslips()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 28px 6px 12px;font-family:var(--font);font-size:13px">
+      <option value="">All Years</option>
+      ${years.map(y=>`<option value="${y}" ${selY===y?'selected':''}>${y}</option>`).join('')}
+    </select>
+    ${slips.length?`<span style="font-size:12px;color:var(--text-3)">${slips.length} payslip${slips.length!==1?'s':''} · Total net: <b style="color:#10B981">₹${totalNet.toLocaleString()}</b></span>`:''}
+  </div>`;
+  const rows=slips.map(s=>`<tr>
+    <td><b>${s.period}</b></td>
+    <td>₹${s.gross.toLocaleString()}</td>
+    <td style="color:#CC1414">- ₹${s.deductions.toLocaleString()}</td>
+    <td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td>
+    <td><button class="btn btn-primary btn-sm" onclick="viewPayslip('${s.id}')">View & Download</button></td>
+  </tr>`);
+  html+=tbl(['Period','Gross','Deductions','Net Pay',''],rows,'No payslips yet. Ask admin to run payroll for your account.');
+  gi('page-body').innerHTML=html;
 }
 function viewPayslip(id){
   const s=DB.get('payslips').find(x=>x.id===id); if(!s) return;
