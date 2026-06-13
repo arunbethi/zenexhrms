@@ -273,45 +273,88 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 }
 
 /* ── COLLAPSED SIDEBAR ── */
-.sidebar.collapsed { width: 56px; }
-.sidebar.collapsed .sb-logo svg { width: 28px; }
-.sidebar.collapsed .sb-logo { padding: 14px 12px; }
-.sidebar.collapsed .sb-user { padding: 10px 11px; gap: 0; }
-.sidebar.collapsed .sb-user .sb-name,
-.sidebar.collapsed .sb-user .sb-role { display: none; }
+.sidebar.collapsed { width: 68px; }
+
+/* Logo: hide full SVG, show Z mark */
+.sidebar.collapsed .sb-logo-full { display: none; }
+.sidebar.collapsed .sb-logo-z  { display: flex !important; }
+.sb-logo-z {
+  display: none;
+  width: 36px; height: 36px; border-radius: 8px;
+  background: var(--red);
+  align-items: center; justify-content: center;
+  font-family: 'Arial Black', Arial, sans-serif;
+  font-weight: 900; font-size: 20px; color: #fff;
+  flex-shrink: 0;
+}
+
+/* User: show only avatar, centered */
+.sidebar.collapsed .sb-user { padding: 10px 0; justify-content: center; }
+.sidebar.collapsed .sb-user-text { display: none; }
+
+/* Nav groups: hidden */
 .sidebar.collapsed .nav-group { display: none; }
-.sidebar.collapsed .nav-item { padding: 10px 0; justify-content: center; gap: 0; }
+
+/* Nav items: icon only, bigger, centered */
+.sidebar.collapsed .nav-item {
+  padding: 11px 0;
+  justify-content: center;
+  gap: 0;
+  position: relative;
+}
 .sidebar.collapsed .nav-item span { display: none; }
-.sidebar.collapsed .nav-item svg { margin: 0 auto; }
-.sidebar.collapsed .nav-item { position: relative; }
+.sidebar.collapsed .nav-item svg {
+  width: 20px; height: 20px;
+  margin: 0 auto;
+}
+
+/* Tooltip on hover */
 .sidebar.collapsed .nav-item:hover::after {
   content: attr(data-label);
-  position: fixed; left: 64px; z-index: 999;
+  position: fixed; left: 76px; z-index: 9999;
   background: #1E293B; color: #F1F5F9;
-  padding: 5px 12px; border-radius: 6px;
+  padding: 6px 14px; border-radius: 8px;
   font-size: 12px; font-weight: 600;
   white-space: nowrap; pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.08);
 }
-.sidebar.collapsed .sb-footer { padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 0; }
-.sidebar.collapsed .sb-clock { font-size: 11px; font-weight: 700; writing-mode: vertical-rl; color: #64748B; }
-.sidebar.collapsed .sb-date { display: none; }
-.sidebar.collapsed .sb-logout { padding: 8px 0; justify-content: center; border-radius: 0; }
-.sidebar.collapsed .sb-logout svg { margin: 0; }
-.sidebar.collapsed .sb-logout span { display: none; }
+.sidebar.collapsed .nav-item:hover::before {
+  content: '';
+  position: fixed; left: 70px; z-index: 9999;
+  border: 6px solid transparent;
+  border-right-color: #1E293B;
+  pointer-events: none;
+}
+
+/* Footer: hide clock/date, center logout icon */
+.sidebar.collapsed .sb-clock,
+.sidebar.collapsed .sb-date  { display: none; }
+.sidebar.collapsed .sb-footer { padding: 12px 0; align-items: center; }
+.sidebar.collapsed .sb-logout {
+  width: 44px; height: 44px;
+  padding: 0; border-radius: 10px;
+  justify-content: center;
+}
+.sidebar.collapsed .sb-logout-text { display: none; }
+.sidebar.collapsed .sb-logout svg { width: 18px; height: 18px; }
 
 /* ── SIDEBAR TOGGLE BUTTON ── */
 .sb-toggle {
-  position: absolute; top: 50%; right: -12px; transform: translateY(-50%);
-  width: 24px; height: 24px; border-radius: 50%;
-  background: var(--surface); border: 1.5px solid var(--border);
+  position: absolute;
+  top: 50%; right: -14px;
+  transform: translateY(-50%);
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; z-index: 20; transition: all .2s;
-  box-shadow: var(--shadow-sm);
+  cursor: pointer; z-index: 30;
+  transition: background .2s, border-color .2s, box-shadow .2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
-.sb-toggle:hover { background: var(--red); border-color: var(--red); }
+.sb-toggle:hover { background: var(--red); border-color: var(--red); box-shadow: 0 2px 12px rgba(204,20,20,.4); }
 .sb-toggle:hover svg { stroke: #fff; }
-.sb-toggle svg { transition: transform .25s; }
+.sb-toggle svg { transition: transform .3s cubic-bezier(.4,0,.2,1); stroke: #94A3B8; }
 .sidebar.collapsed .sb-toggle svg { transform: rotate(180deg); }
 .sidebar::-webkit-scrollbar { width: 4px; }
 .sidebar::-webkit-scrollbar-track { background: #0F172A; }
@@ -678,18 +721,25 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
 
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
-    <div class="sb-logo" style="position:relative">
-      <button class="sb-toggle" onclick="toggleSidebar()" id="sb-toggle" title="Toggle sidebar"><svg id="sb-toggle-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
-      <svg viewBox="0 0 220 75" xmlns="http://www.w3.org/2000/svg" width="170">
-        <path d="M9,8 L53,8 L53,23 L26,50 L53,50 L53,65 L9,65 L9,50 L36,23 L9,23 Z" fill="#1E293B"/>
-        <path d="M5,4 L49,4 L49,19 L22,46 L49,46 L49,61 L5,61 L5,46 L32,19 L5,19 Z" fill="#CC1414"/>
-        <text x="62" y="33" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="24" fill="#CC1414" letter-spacing="1">ZENEX</text>
-        <text x="62" y="55" font-family="Arial,sans-serif" font-weight="400" font-size="15" fill="#334155" letter-spacing="4">PARTNERS</text>
-      </svg>
+    <div class="sb-logo" style="position:relative;padding:16px 16px 14px;display:flex;align-items:center">
+      <button class="sb-toggle" onclick="toggleSidebar()" id="sb-toggle" title="Toggle sidebar">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <!-- Full logo (expanded) -->
+      <div class="sb-logo-full">
+        <svg viewBox="0 0 220 75" xmlns="http://www.w3.org/2000/svg" width="160">
+          <path d="M9,8 L53,8 L53,23 L26,50 L53,50 L53,65 L9,65 L9,50 L36,23 L9,23 Z" fill="#1E293B"/>
+          <path d="M5,4 L49,4 L49,19 L22,46 L49,46 L49,61 L5,61 L5,46 L32,19 L5,19 Z" fill="#CC1414"/>
+          <text x="62" y="33" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="24" fill="#CC1414" letter-spacing="1">ZENEX</text>
+          <text x="62" y="55" font-family="Arial,sans-serif" font-weight="400" font-size="15" fill="#334155" letter-spacing="4">PARTNERS</text>
+        </svg>
+      </div>
+      <!-- Z mark (collapsed) -->
+      <div class="sb-logo-z">Z</div>
     </div>
     <div class="sb-user">
       <div class="avatar" id="sb-av">A</div>
-      <div>
+      <div class="sb-user-text">
         <span class="sb-name" id="sb-name">User</span>
         <span class="sb-role" id="sb-role">Role</span>
       </div>
@@ -699,8 +749,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); curs
       <div class="sb-clock" id="sb-clock">--:--:--</div>
       <div class="sb-date"  id="sb-date"></div>
       <button class="sb-logout" onclick="doLogout()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Sign Out
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="sb-logout-text">Sign Out</span>
       </button>
     </div>
   </div>
