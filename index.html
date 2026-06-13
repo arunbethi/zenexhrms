@@ -1052,11 +1052,29 @@ function todayAtt(uid) { return DB.get('attendance').find(r=>r.uid===uid&&r.date
 
 function clockIn(wfh) {
   if (todayAtt(CU.id)) return toast('Already clocked in today','error');
+  const mgrEmail=(gi('mgr-email')?gi('mgr-email').value.trim():null)||CU.managerEmail||'';
+  // Save manager email on user for future use
+  if(mgrEmail){const users=DB.get('users');const i=users.findIndex(u=>u.id===CU.id);if(i>=0){users[i].managerEmail=mgrEmail;DB.set('users',users);CU.managerEmail=mgrEmail;}}
+  closeModal();
   const now=new Date();
   const rec={id:'a_'+Date.now(),uid:CU.id,date:td(),in:ft(now),out:null,hours:null,overtime:null,status:'present',wfh:!!wfh};
   const arr=DB.get('attendance'); arr.push(rec); dbSet('attendance',arr);
   lg(CU.id,CU.name,'CLOCK_IN','Clocked in at '+f12(now)+(wfh?' (WFH)':''));
   toast('Clocked in at '+f12(now)+(wfh?' — WFH':''),'success');
+  // Notify manager
+  if(mgrEmail){
+    const s=DB.one('settings')||{};
+    sendEmail([mgrEmail],`🟢 Clock-In: ${CU.name}`,emailHtml('Employee Clock-In',
+      `<p><b>${CU.name}</b> has clocked in.</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px">
+         <tr><td style="padding:6px 0;color:#64748B;width:120px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Clock-In Time</td><td style="font-weight:700;color:#10B981">${f12(now)}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Mode</td><td>${wfh?'🏠 Work From Home':'🏢 Office'}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Office Start</td><td>${s.officeStart||'09:00'}</td></tr>
+       </table>`));
+  }
   navigate('dashboard');
 }
 
@@ -1077,13 +1095,26 @@ function clockOut() {
   toast(`Clocked out · ${arr[i].hours}h${arr[i].overtime?' (+'+arr[i].overtime+'h OT)':''}`,arr[i].overtime?'info':'success');
   const otNote=arr[i].overtime?` (+${arr[i].overtime}h overtime)`:'';
   addNotif('Clocked Out',`${CU.name} clocked out at ${arr[i].out} · ${arr[i].hours}h${otNote}`,'logout');
-  if(arr[i].overtime){
+  // Notify manager on clock-out
+  const mgrEmail=CU.managerEmail||'';
+  if(mgrEmail){
+    const notifyEmails=[mgrEmail,...(arr[i].overtime?getAdminEmails():[])].filter((v,i2,a)=>a.indexOf(v)===i2&&v);
+    sendEmail(notifyEmails,`🔴 Clock-Out: ${CU.name}`,emailHtml('Employee Clock-Out',
+      `<p><b>${CU.name}</b> has clocked out.</p>
+       <table style="width:100%;border-collapse:collapse;font-size:13px">
+         <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Clock-In</td><td>${arr[i].in}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Clock-Out</td><td style="font-weight:700;color:#CC1414">${arr[i].out}</td></tr>
+         <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td><b>${arr[i].hours}h</b></td></tr>
+         ${arr[i].overtime?`<tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>`:''}
+       </table>`));
+  } else if(arr[i].overtime){
     sendEmail(getAdminEmails(),'⚡ Overtime — '+CU.name,emailHtml('Overtime Alert',
       `<p><b>${CU.name}</b> logged overtime today.</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Clock-in</td><td>${arr[i].in}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Clock-out</td><td>${arr[i].out}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td>${arr[i].hours}h</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>
        </table>`));
@@ -1413,7 +1444,6 @@ const PAGES = {
     {id:'dashboard',icon:iH(),label:'Dashboard'},
     {g:'My Work'},
     {id:'my-att',icon:iCk(),label:'Attendance'},
-    {id:'my-timesheets',icon:iTs(),label:'Timesheets'},
     {id:'leaves',icon:iCal(),label:'Leave Requests'},
     {id:'my-compoff',icon:iCompOff(),label:'Comp-Off'},
     {g:'Finances'},
@@ -1619,8 +1649,18 @@ function pgDash() {
 }
 
 function openClockIn(){
-  modal('<h3>Clock In</h3>',`<div class="toggle-row"><input type="checkbox" id="wfh-cb"><label for="wfh-cb">I am working from home today</label></div>`,`<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-success" onclick="clockIn(gi('wfh-cb').checked)">Clock In</button>`);
+  const mgr=DB.get('users').filter(u=>u.role==='admin'&&u.active&&u.email);
+  const saved=CU.managerEmail||'';
+  const sel=mgr.length?`<div class="fg"><label>Notify Manager (select or type email)</label><select id="mgr-sel" onchange="syncMgrEmail(this.value)"><option value="">— Select manager —</option>${mgr.map(u=>`<option value="${esc(u.email)}" ${saved===u.email?'selected':''}>${esc(u.name)} &lt;${esc(u.email)}&gt;</option>`).join('')}</select></div>`:'';
+  modal('<h3>Clock In</h3>',`
+    <div class="toggle-row" style="margin-bottom:14px"><input type="checkbox" id="wfh-cb"><label for="wfh-cb">I am working from home today</label></div>
+    ${sel}
+    <div class="fg"><label>Manager Email <span style="color:var(--text-3);font-weight:400">(notification will be sent)</span></label>
+      <input type="email" id="mgr-email" placeholder="manager@company.com" value="${esc(saved)}">
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-success" onclick="clockIn(gi('wfh-cb').checked)">Clock In</button>`);
 }
+function syncMgrEmail(v){const el=gi('mgr-email');if(el&&v)el.value=v;}
 
 // ════════════════════════════════════════════
 // PAGE: ADMIN DASHBOARD
