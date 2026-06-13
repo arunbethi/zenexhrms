@@ -291,7 +291,7 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 .sb-name { display: block; font-size: 13px; font-weight: 700; color: #F1F5F9; }
 .sb-role { font-size: 11px; color: #475569; }
 nav { padding: 10px 0; flex: 1; overflow-y: auto; }
-.nav-group { padding: var(--s2) var(--s4) var(--s1); font-size: 10px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: .8px; margin-top: 6px; }
+.nav-group { padding: var(--s2) var(--s4) var(--s1); font-size: 9px; font-weight: 800; color: #334155; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; border-top: 1px solid rgba(255,255,255,.04); padding-top: 12px; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 9px var(--s4); font-size: 13px; color: #64748B;
@@ -973,6 +973,24 @@ function seed() {
     ['attendance','breaks','leaves','logs','documents'].forEach(k=>{ if(!localStorage.getItem('zp_'+k)) DB.set(k,[]); });
     localStorage.setItem('zp_v4','1');
   }
+  if(!localStorage.getItem('zp_v5')){
+    ['payroll','payslips','expenses','assets','tickets','ticketMsgs','onboarding','polls','recognition','compoffs','shifts','shiftAssignments','salaryConfig'].forEach(k=>{ if(!localStorage.getItem('zp_'+k)) DB.set(k,[]); });
+    const yr=new Date().getFullYear();
+    if(!DB.get('holidays').length) DB.set('holidays',[
+      {id:'hol1',name:"New Year's Day",date:yr+'-01-01',type:'national'},
+      {id:'hol2',name:'Republic Day',date:yr+'-01-26',type:'national'},
+      {id:'hol3',name:'Independence Day',date:yr+'-08-15',type:'national'},
+      {id:'hol4',name:'Gandhi Jayanti',date:yr+'-10-02',type:'national'},
+      {id:'hol5',name:'Diwali',date:yr+'-10-20',type:'festival'},
+      {id:'hol6',name:'Christmas Day',date:yr+'-12-25',type:'national'},
+    ]);
+    if(!DB.get('shifts').length) DB.set('shifts',[
+      {id:'sh1',name:'General',start:'09:00',end:'18:00',days:[1,2,3,4,5]},
+      {id:'sh2',name:'Morning',start:'07:00',end:'15:00',days:[1,2,3,4,5,6]},
+      {id:'sh3',name:'Evening',start:'14:00',end:'22:00',days:[1,2,3,4,5,6]},
+    ]);
+    localStorage.setItem('zp_v5','1');
+  }
   ensureBalances();
 }
 
@@ -1357,24 +1375,60 @@ function lvbadge(t){
 const PAGES = {
   admin:[
     {id:'dashboard',icon:iH(),label:'Dashboard'},
+    {id:'mss',icon:iTeam(),label:'Manager Dashboard'},
+    {g:'People'},
     {id:'employees',icon:iU(),label:'Employees'},
-    {id:'att-admin',icon:iCk(),label:'Attendance'},
-    {id:'leaves-admin',icon:iCal(),label:'Leave Requests'},
-    {id:'announcements-admin',icon:iBell(),label:'Announcements'},
-    {id:'documents-admin',icon:iDoc(),label:'Documents'},
-    {id:'team-calendar',icon:iCal2(),label:'Team Calendar'},
+    {id:'onboarding',icon:iBoarding(),label:'Onboarding'},
+    {id:'org-chart',icon:iOrg(),label:'Org Chart'},
     {id:'directory',icon:iDir(),label:'Directory'},
+    {g:'Time & Attendance'},
+    {id:'att-admin',icon:iCk(),label:'Attendance'},
+    {id:'timesheets',icon:iTs(),label:'Timesheets'},
+    {id:'shifts',icon:iShift(),label:'Shifts'},
+    {id:'team-calendar',icon:iCal2(),label:'Team Calendar'},
+    {g:'Leave'},
+    {id:'leaves-admin',icon:iCal(),label:'Leave Requests'},
     {id:'leave-balances',icon:iStar(),label:'Leave Balances'},
-    {id:'settings',icon:iGear(),label:'Settings'},
-    {id:'logs',icon:iLog(),label:'Activity Logs'},
+    {id:'comp-off',icon:iCompOff(),label:'Comp-Off'},
+    {id:'holidays',icon:iHoliday(),label:'Holidays'},
+    {g:'Payroll'},
+    {id:'payroll',icon:iPayroll(),label:'Payroll'},
+    {id:'payslips-admin',icon:iSlip(),label:'Payslips'},
+    {g:'Finance'},
+    {id:'expenses-admin',icon:iExpense(),label:'Expenses'},
+    {id:'assets',icon:iAsset(),label:'Assets'},
+    {g:'Support'},
+    {id:'helpdesk-admin',icon:iTicket(),label:'Helpdesk'},
+    {g:'Engagement'},
+    {id:'announcements-admin',icon:iBell(),label:'Announcements'},
+    {id:'recognition-admin',icon:iTrophy(),label:'Recognition'},
+    {id:'polls-admin',icon:iPoll(),label:'Polls & Surveys'},
+    {g:'Admin'},
+    {id:'documents-admin',icon:iDoc(),label:'Documents'},
     {id:'reports',icon:iBar(),label:'Reports'},
+    {id:'logs',icon:iLog(),label:'Activity Logs'},
+    {id:'settings',icon:iGear(),label:'Settings'},
   ],
   employee:[
     {id:'dashboard',icon:iH(),label:'Dashboard'},
-    {id:'my-att',icon:iCk(),label:'My Attendance'},
+    {g:'My Work'},
+    {id:'my-att',icon:iCk(),label:'Attendance'},
+    {id:'my-timesheets',icon:iTs(),label:'Timesheets'},
     {id:'leaves',icon:iCal(),label:'Leave Requests'},
-    {id:'announcements',icon:iBell(),label:'Announcements'},
+    {id:'my-compoff',icon:iCompOff(),label:'Comp-Off'},
+    {g:'Finances'},
+    {id:'my-payslips',icon:iSlip(),label:'My Payslips'},
+    {id:'my-expenses',icon:iExpense(),label:'My Expenses'},
+    {g:'Company'},
     {id:'directory',icon:iDir(),label:'Directory'},
+    {id:'holidays',icon:iHoliday(),label:'Holidays'},
+    {id:'announcements',icon:iBell(),label:'Announcements'},
+    {id:'recognition',icon:iTrophy(),label:'Recognition'},
+    {id:'polls',icon:iPoll(),label:'Polls'},
+    {g:'Support'},
+    {id:'my-tickets',icon:iTicket(),label:'Support Tickets'},
+    {id:'my-assets',icon:iAsset(),label:'My Assets'},
+    {g:'Profile'},
     {id:'profile',icon:iPerson(),label:'My Profile'},
   ]
 };
@@ -1432,7 +1486,10 @@ function trySendDailySummary() {
 
 function buildNav() {
   const pages=PAGES[CU.role]||PAGES.employee;
-  gi('sb-nav').innerHTML=`<div class="nav-group">Menu</div>`+pages.map(p=>`<div class="nav-item ${p.id===curPage?'active':''}" id="ni-${p.id}" onclick="navigate('${p.id}')">${p.icon}<span>${p.label}</span></div>`).join('');
+  gi('sb-nav').innerHTML=pages.map(p=>p.g
+    ?`<div class="nav-group">${p.g}</div>`
+    :`<div class="nav-item ${p.id===curPage?'active':''}" id="ni-${p.id}" onclick="navigate('${p.id}')">${p.icon}<span>${p.label}</span></div>`
+  ).join('');
 }
 
 function navigate(pid) {
@@ -1441,10 +1498,38 @@ function navigate(pid) {
     const el=gi('ni-'+p.id);
     if(el) el.classList.toggle('active',p.id===pid);
   });
-  const titles={dashboard:'Dashboard',employees:'Employees','att-admin':'Attendance','leaves-admin':'Leave Requests','announcements-admin':'Announcements','documents-admin':'Documents','team-calendar':'Team Calendar',directory:'Directory','leave-balances':'Leave Balances',settings:'Settings',logs:'Activity Logs',reports:'Reports','my-att':'My Attendance',leaves:'Leave Requests',announcements:'Announcements',profile:'My Profile'};
+  const titles={
+    dashboard:'Dashboard',mss:'Manager Dashboard',employees:'Employees',onboarding:'Onboarding',
+    'org-chart':'Org Chart',directory:'Directory','att-admin':'Attendance',timesheets:'Timesheets',
+    shifts:'Shifts','team-calendar':'Team Calendar','leaves-admin':'Leave Requests',
+    'leave-balances':'Leave Balances','comp-off':'Comp-Off',holidays:'Holidays',
+    payroll:'Payroll','payslips-admin':'Payslips','expenses-admin':'Expenses',
+    assets:'Asset Management','helpdesk-admin':'Helpdesk','announcements-admin':'Announcements',
+    'recognition-admin':'Recognition','polls-admin':'Polls & Surveys','documents-admin':'Documents',
+    reports:'Reports',logs:'Activity Logs',settings:'Settings',
+    'my-att':'My Attendance','my-timesheets':'My Timesheets',leaves:'Leave Requests',
+    'my-compoff':'My Comp-Off','my-payslips':'My Payslips','my-expenses':'My Expenses',
+    announcements:'Announcements',recognition:'Recognition',polls:'Polls',
+    'my-tickets':'Support Tickets','my-assets':'My Assets',profile:'My Profile'
+  };
   gi('pg-title').textContent=titles[pid]||pid;
   gi('pg-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  const renders={dashboard:pgDash,employees:pgEmps,'att-admin':pgAtt,'leaves-admin':pgLeavesAdmin,'announcements-admin':pgAnnAdmin,'documents-admin':pgDocsAdmin,'team-calendar':pgTeamCal,directory:pgDirectory,'leave-balances':pgLeaveBalances,settings:pgSettings,logs:pgLogs,reports:pgReports,'my-att':pgMyAtt,leaves:pgLeaves,announcements:pgAnn,profile:pgProfile};
+  const renders={
+    dashboard:pgDash,mss:pgMSS,employees:pgEmps,onboarding:pgOnboarding,
+    'org-chart':pgOrgChart,directory:pgDirectory,'att-admin':pgAtt,
+    timesheets:pgTimesheets,shifts:pgShifts,'team-calendar':pgTeamCal,
+    'leaves-admin':pgLeavesAdmin,'leave-balances':pgLeaveBalances,
+    'comp-off':pgCompOff,holidays:pgHolidays,payroll:pgPayroll,
+    'payslips-admin':pgPayslipsAdmin,'expenses-admin':pgExpensesAdmin,
+    assets:pgAssets,'helpdesk-admin':pgHelpdeskAdmin,
+    'announcements-admin':pgAnnAdmin,'recognition-admin':pgRecognitionAdmin,
+    'polls-admin':pgPollsAdmin,'documents-admin':pgDocsAdmin,
+    reports:pgReports,logs:pgLogs,settings:pgSettings,
+    'my-att':pgMyAtt,'my-timesheets':pgMyTimesheets,leaves:pgLeaves,
+    'my-compoff':pgMyCompOff,'my-payslips':pgMyPayslips,
+    'my-expenses':pgMyExpenses,announcements:pgAnn,recognition:pgRecognition,
+    polls:pgPolls,'my-tickets':pgMyTickets,'my-assets':pgMyAssets,profile:pgProfile
+  };
   const fn=renders[pid];
   if(fn) fn(); else gi('page-body').innerHTML='<p style="padding:24px;color:var(--text-3)">Page not found</p>';
 }
@@ -2282,6 +2367,703 @@ function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{
        </table>`));
   }
 },300);}
+
+
+// ════════════════════════════════════════════
+// NEW MODULE ICONS
+// ════════════════════════════════════════════
+function iTeam(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`}
+function iBoarding(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>`}
+function iOrg(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><rect x="1" y="16" width="6" height="4" rx="1"/><rect x="9" y="16" width="6" height="4" rx="1"/><rect x="17" y="16" width="6" height="4" rx="1"/><line x1="12" y1="6" x2="12" y2="11"/><line x1="4" y1="16" x2="4" y2="11"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="20" y1="16" x2="20" y2="11"/><line x1="4" y1="11" x2="20" y2="11"/></svg>`}
+function iTs(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="15" x2="13" y2="15"/></svg>`}
+function iShift(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`}
+function iCompOff(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`}
+function iHoliday(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l4-8 4 5 3-3 4 6"/><circle cx="17" cy="6" r="2"/></svg>`}
+function iPayroll(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`}
+function iSlip(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16l3-2 2 2 2-2 2 2 2-2 3 2V4a2 2 0 0 0-2-2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="11" y2="17"/></svg>`}
+function iExpense(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`}
+function iAsset(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`}
+function iTicket(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>`}
+function iTrophy(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 21 12 17 16 21"/><line x1="12" y1="17" x2="12" y2="11"/><path d="M7 4H4a2 2 0 0 0-2 2v2a4 4 0 0 0 4 4h.5"/><path d="M17 4h3a2 2 0 0 1 2 2v2a4 4 0 0 1-4 4h-.5"/><path d="M7 4h10v7a5 5 0 0 1-10 0V4z"/></svg>`}
+function iPoll(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`}
+
+// ════════════════════════════════════════════
+// SHARED TABLE HELPER
+// ════════════════════════════════════════════
+function tbl(headers,rows,empty){
+  if(!rows||!rows.length) return`<div class="card"><div class="card-body"><div class="empty-state">${empty||'No records found'}</div></div></div>`;
+  return`<div class="card"><div class="tbl-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function sc2(v,l,c){return`<div class="scard" style="border-left-color:${c||'var(--red)'}"><div class="scard-val" style="color:${c||'var(--red)'}">${v}</div><div class="scard-label">${l}</div></div>`;}
+
+// ════════════════════════════════════════════
+// MANAGER SELF-SERVICE
+// ════════════════════════════════════════════
+function pgMSS(){
+  const myDept=CU.dept;
+  const team=DB.get('users').filter(u=>u.role==='employee'&&u.active&&(CU.role==='admin'||u.dept===myDept));
+  const att=DB.get('attendance').filter(r=>r.date===td());
+  const pendingLeaves=DB.get('leaves').filter(l=>l.status==='pending');
+  const pendingExp=DB.get('expenses').filter(e=>e.status==='pending');
+  const openTix=DB.get('tickets').filter(t=>t.status!=='closed');
+  let html=`<div class="stat-grid">${sc2(team.length,'Team Size','#0F172A')}${sc2(att.filter(r=>team.find(u=>u.id===r.uid)).length,'Present Today','#10B981')}${sc2(pendingLeaves.length,'Leave Pending','#F59E0B')}${sc2(pendingExp.length,'Expense Pending','#0369A1')}</div>`;
+  html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:4px">`;
+  // Team attendance today
+  html+=`<div class="card"><div class="card-header"><span class="card-title">Team Today</span></div><div class="card-body" style="padding:0"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Employee</th><th>Status</th><th>In</th></tr></thead><tbody>`;
+  team.forEach(u=>{const a=att.find(r=>r.uid===u.id);html+=`<tr><td style="padding:8px 12px"><b>${esc(u.name)}</b></td><td style="padding:8px 12px">${a?(a.wfh?'<span class="badge bb">WFH</span>':'<span class="badge bg">In Office</span>'):'<span class="badge br">Absent</span>'}</td><td style="padding:8px 12px">${a?a.in:'—'}</td></tr>`;});
+  html+=`</tbody></table></div></div>`;
+  // Pending leaves
+  html+=`<div class="card"><div class="card-header"><span class="card-title">Pending Leave Requests</span></div><div class="card-body" style="padding:0">`;
+  if(!pendingLeaves.length) html+=`<div class="empty-state">No pending requests</div>`;
+  else html+=`<table style="width:100%;border-collapse:collapse"><thead><tr><th>Employee</th><th>Type</th><th>Days</th><th>Action</th></tr></thead><tbody>`+pendingLeaves.slice(0,5).map(l=>`<tr><td style="padding:8px 12px">${esc(l.uname)}</td><td style="padding:8px 12px">${lvbadge(l.type)}</td><td style="padding:8px 12px">${l.days}d</td><td style="padding:8px 12px"><button class="btn btn-ghost btn-sm" onclick="navigate('leaves-admin')">Review</button></td></tr>`).join('')+`</tbody></table>`;
+  html+=`</div></div></div>`;
+  gi('page-body').innerHTML=html;
+}
+
+// ════════════════════════════════════════════
+// ONBOARDING
+// ════════════════════════════════════════════
+const OB_STEPS=['Welcome Email Sent','Joining Form Filled','Documents Collected','ID Card Issued','Equipment Allocated','System Access Created','Orientation Done','Buddy Assigned'];
+function pgOnboarding(){
+  const obs=DB.get('onboarding'); const users=DB.get('users').filter(u=>u.active&&u.role==='employee');
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openStartOnboarding()">+ Start Onboarding</button></div>`;
+  if(!obs.length){html+=`<div class="card"><div class="card-body"><div class="empty-state">No onboarding records yet</div></div></div>`;gi('page-body').innerHTML=html;return;}
+  const rows=obs.map(ob=>{
+    const u=users.find(x=>x.id===ob.uid)||{name:ob.uname};
+    const done=(ob.steps||[]).filter(Boolean).length; const pct=Math.round((done/OB_STEPS.length)*100);
+    return`<tr><td><b>${esc(u.name)}</b></td><td>${esc(ob.dept||u.dept||'')}</td><td>${ob.startDate||'—'}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:80px;height:5px;background:var(--border);border-radius:3px"><div style="width:${pct}%;height:5px;background:${pct===100?'#10B981':'var(--red)'};border-radius:3px"></div></div><span style="font-size:11px;color:var(--text-3)">${pct}%</span></div></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="viewOnboarding('${ob.id}')">View</button></td></tr>`;
+  });
+  html+=tbl(['Employee','Dept','Start Date','Progress',''],rows,'');
+  gi('page-body').innerHTML=html;
+}
+function openStartOnboarding(){
+  const users=DB.get('users').filter(u=>u.active&&u.role==='employee');
+  modal('<h3>Start Onboarding</h3>',
+    `<div class="fg"><label>Employee</label><select id="ob-uid"><option value="">Select employee...</option>${users.map(u=>`<option value="${u.id}|${esc(u.name)}|${esc(u.dept)}">${esc(u.name)} — ${esc(u.dept)}</option>`).join('')}</select></div>
+     <div class="fg"><label>Start Date</label><input type="date" id="ob-sd" value="${td()}"></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveOnboarding()">Create</button>`);
+}
+function saveOnboarding(){
+  const v=gv('ob-uid'); if(!v) return toast('Select employee','error');
+  const [uid,uname,dept]=v.split('|');
+  if(DB.get('onboarding').find(o=>o.uid===uid)) return toast('Already exists','error');
+  const ob={id:'ob_'+Date.now(),uid,uname,dept,startDate:gv('ob-sd'),steps:Array(OB_STEPS.length).fill(false)};
+  const arr=DB.get('onboarding'); arr.push(ob); DB.set('onboarding',arr);
+  toast('Onboarding started','success'); closeModal(); navigate('onboarding');
+}
+function viewOnboarding(id){
+  const ob=DB.get('onboarding').find(o=>o.id===id); if(!ob) return;
+  const checks=OB_STEPS.map((s,i)=>`<div class="toggle-row" style="padding:10px 0;border-bottom:1px solid var(--border)"><input type="checkbox" id="obs_${i}" ${ob.steps[i]?'checked':''}><label for="obs_${i}" style="font-size:13px">${s}</label></div>`).join('');
+  modal(`<h3>Onboarding — ${esc(ob.uname)}</h3>`,checks,
+    `<button class="btn btn-ghost" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="saveObSteps('${id}')">Save</button>`);
+}
+function saveObSteps(id){
+  const arr=DB.get('onboarding'); const i=arr.findIndex(o=>o.id===id); if(i<0) return;
+  arr[i].steps=OB_STEPS.map((_,j)=>!!gi('obs_'+j)?.checked);
+  DB.set('onboarding',arr); toast('Progress saved','success'); closeModal(); navigate('onboarding');
+}
+
+// ════════════════════════════════════════════
+// ORG CHART
+// ════════════════════════════════════════════
+function pgOrgChart(){
+  const users=DB.get('users').filter(u=>u.active);
+  // Build tree: users with no reportsTo are top level
+  const byId={}; users.forEach(u=>byId[u.id]=u);
+  function node(u,depth){
+    const children=users.filter(x=>x.reportsTo===u.id);
+    const col=['#CC1414','#0369A1','#10B981','#7C3AED','#F59E0B'][depth%5];
+    return`<div style="display:inline-flex;flex-direction:column;align-items:center;padding:0 8px">
+      <div style="background:var(--surface);border:1.5px solid ${col};border-radius:10px;padding:10px 14px;text-align:center;min-width:110px;box-shadow:var(--shadow-sm)">
+        <div style="width:32px;height:32px;border-radius:50%;background:${col};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;margin:0 auto 6px">${ini(u.name)}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text)">${esc(u.name)}</div>
+        <div style="font-size:10px;color:var(--text-3)">${esc(u.position||u.dept)}</div>
+        ${u.role==='admin'?`<span class="badge br" style="margin-top:3px;font-size:9px">Admin</span>`:''}
+      </div>
+      ${children.length?`<div style="width:2px;height:16px;background:${col}"></div><div style="display:flex;position:relative">${children.map(c=>`<div style="display:flex;flex-direction:column;align-items:center"><div style="width:100%;height:2px;background:${col}"></div>${node(c,depth+1)}</div>`).join('')}</div>`:''}
+    </div>`;
+  }
+  const roots=users.filter(u=>!u.reportsTo||!byId[u.reportsTo]);
+  let html=`<div class="card"><div class="card-body">
+    <p style="font-size:12px;color:var(--text-3);margin-bottom:16px">Set "Reports To" field on each employee to build the hierarchy. Employees without a manager appear as root nodes.</p>
+    <div style="overflow-x:auto;padding-bottom:12px"><div style="display:inline-flex;gap:24px;padding:12px">${roots.map(u=>node(u,0)).join('')}</div></div>
+  </div></div>`;
+  gi('page-body').innerHTML=html;
+}
+
+// ════════════════════════════════════════════
+// SHIFTS
+// ════════════════════════════════════════════
+function pgShifts(){
+  const shifts=DB.get('shifts'); const users=DB.get('users').filter(u=>u.active&&u.role==='employee');
+  const asgn=DB.get('shiftAssignments');
+  let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">`;
+  // Shift definitions
+  html+=`<div class="card"><div class="card-header"><span class="card-title">Shift Definitions</span><button class="btn btn-primary btn-sm" onclick="openAddShift()">+ Add</button></div><div class="card-body" style="padding:0">`;
+  if(!shifts.length) html+=`<div class="empty-state">No shifts defined</div>`;
+  else html+=`<table style="width:100%;border-collapse:collapse"><thead><tr><th>Name</th><th>Hours</th><th>Days</th><th></th></tr></thead><tbody>`+
+    shifts.map(s=>`<tr><td style="padding:8px 12px"><b>${esc(s.name)}</b></td><td style="padding:8px 12px">${s.start}–${s.end}</td><td style="padding:8px 12px;font-size:11px">${(s.days||[]).map(d=>['','M','T','W','T','F','S','S'][d]).join(' ')}</td><td style="padding:8px 12px"><button class="btn btn-ghost btn-sm" onclick="delShift('${s.id}')">Del</button></td></tr>`).join('')+`</tbody></table>`;
+  html+=`</div></div>`;
+  // Assignments
+  html+=`<div class="card"><div class="card-header"><span class="card-title">Employee Assignments</span></div><div class="card-body" style="padding:0"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Employee</th><th>Shift</th></tr></thead><tbody>`;
+  users.forEach(u=>{
+    const a=asgn.find(x=>x.uid===u.id);
+    html+=`<tr><td style="padding:8px 12px">${esc(u.name)}</td><td style="padding:8px 12px"><select onchange="assignShift('${u.id}',this.value)" style="border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:12px;font-family:var(--font)"><option value="">—</option>${shifts.map(s=>`<option value="${s.id}" ${a&&a.shiftId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></td></tr>`;
+  });
+  html+=`</tbody></table></div></div></div>`;
+  gi('page-body').innerHTML=html;
+}
+function openAddShift(){
+  modal('<h3>Add Shift</h3>',
+    `<div class="fg"><label>Name</label><input id="sh-n" placeholder="e.g. Night Shift"></div>
+     <div class="grid-2"><div class="fg"><label>Start</label><input type="time" id="sh-s" value="09:00"></div><div class="fg"><label>End</label><input type="time" id="sh-e" value="18:00"></div></div>
+     <div class="fg"><label>Working Days</label><div style="display:flex;gap:8px;margin-top:6px">${['M','T','W','Th','F','Sa','Su'].map((d,i)=>`<label style="display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" id="sd_${i+1}" ${i<5?'checked':''}>${d}</label>`).join('')}</div></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doAddShift()">Add</button>`);
+}
+function doAddShift(){
+  const n=gv('sh-n'); if(!n) return toast('Enter name','error');
+  const days=[1,2,3,4,5,6,7].filter(i=>gi('sd_'+i)?.checked);
+  const arr=DB.get('shifts'); arr.push({id:'sh_'+Date.now(),name:n,start:gv('sh-s'),end:gv('sh-e'),days});
+  DB.set('shifts',arr); toast('Shift added','success'); closeModal(); navigate('shifts');
+}
+function delShift(id){if(!confirm('Delete shift?'))return;const arr=DB.get('shifts').filter(s=>s.id!==id);DB.set('shifts',arr);navigate('shifts');}
+function assignShift(uid,shiftId){
+  const arr=DB.get('shiftAssignments').filter(x=>x.uid!==uid);
+  if(shiftId) arr.push({uid,shiftId});
+  DB.set('shiftAssignments',arr);toast('Shift assigned','success');
+}
+
+// ════════════════════════════════════════════
+// TIMESHEETS (Admin)
+// ════════════════════════════════════════════
+function pgTimesheets(){
+  const now=new Date(); const selW=gi('ts-week')?gi('ts-week').value:td();
+  const wStart=new Date(selW); wStart.setDate(wStart.getDate()-wStart.getDay()+1);
+  const days=[]; for(let i=0;i<7;i++){const d=new Date(wStart);d.setDate(wStart.getDate()+i);days.push(d.toISOString().split('T')[0]);}
+  const users=DB.get('users').filter(u=>u.active&&u.role==='employee');
+  const att=DB.get('attendance');
+  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <span style="font-size:13px;font-weight:600">Week of</span>
+    <input type="date" id="ts-week" value="${selW}" onchange="pgTimesheets()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
+  </div>`;
+  html+=`<div class="card"><div class="tbl-wrap"><table><thead><tr><th>Employee</th>${days.map(d=>{const dt2=new Date(d+'T12:00:00');return`<th style="text-align:center;font-size:11px">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt2.getDay()]}<br>${dt2.getDate()}</th>`;}).join('')}<th style="text-align:center">Total</th></tr></thead><tbody>`;
+  users.forEach(u=>{
+    let total=0;
+    html+=`<tr><td><b>${esc(u.name)}</b><br><span style="font-size:11px;color:var(--text-3)">${esc(u.dept)}</span></td>`;
+    days.forEach(d=>{
+      const r=att.find(a=>a.uid===u.id&&a.date===d);
+      const h=r?parseFloat(r.hours||0):0; total+=h;
+      html+=`<td style="text-align:center;font-size:12px;padding:6px 4px">${r?(r.out?`<span style="color:${h>=8?'#10B981':'var(--text-2)'};font-weight:600">${h.toFixed(1)}h</span>`:'<span style="color:#F59E0B">●</span>'):`<span style="color:#CBD5E1">—</span>`}</td>`;
+    });
+    html+=`<td style="text-align:center;font-weight:700;color:${total>=40?'#10B981':total>0?'#F59E0B':'var(--text-3)'}">${total.toFixed(1)}h</td></tr>`;
+  });
+  html+=`</tbody></table></div></div>`;
+  gi('page-body').innerHTML=html;
+}
+
+// ════════════════════════════════════════════
+// MY TIMESHEETS (Employee)
+// ════════════════════════════════════════════
+function pgMyTimesheets(){
+  const selW=gi('mts-week')?gi('mts-week').value:td();
+  const wStart=new Date(selW); wStart.setDate(wStart.getDate()-wStart.getDay()+1);
+  const days=[]; for(let i=0;i<7;i++){const d=new Date(wStart);d.setDate(wStart.getDate()+i);days.push(d.toISOString().split('T')[0]);}
+  const att=DB.get('attendance').filter(a=>a.uid===CU.id);
+  let totalH=0;
+  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <span style="font-size:13px;font-weight:600">Week of</span>
+    <input type="date" id="mts-week" value="${selW}" onchange="pgMyTimesheets()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
+  </div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:20px">`;
+  days.forEach(d=>{
+    const r=att.find(a=>a.date===d); const dt2=new Date(d+'T12:00:00'); const isW=dt2.getDay()===0||dt2.getDay()===6;
+    const h=r?parseFloat(r.hours||0):0; totalH+=h;
+    const hol=DB.get('holidays').find(x=>x.date===d);
+    html+=`<div class="card" style="padding:12px;text-align:center;border-top:3px solid ${hol?'#F59E0B':isW?'#CBD5E1':r&&r.out?'#10B981':r?'#0369A1':'var(--border)'}">
+      <div style="font-size:10px;color:var(--text-3)">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt2.getDay()]}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin:2px 0">${dt2.getDate()}</div>
+      ${hol?`<div style="font-size:9px;color:#F59E0B;font-weight:700">${esc(hol.name)}</div>`
+           :r&&r.out?`<div style="font-size:14px;font-weight:700;color:#10B981">${h.toFixed(1)}h</div><div style="font-size:9px;color:var(--text-3)">${r.in}–${r.out}</div>`
+           :r?`<div style="font-size:11px;color:#0369A1;font-weight:600">In Progress</div>`
+           :isW?`<div style="font-size:11px;color:var(--text-3)">Weekend</div>`
+           :`<div style="font-size:11px;color:#CBD5E1">—</div>`}
+    </div>`;
+  });
+  html+=`</div><div class="card" style="padding:16px;text-align:center"><span style="font-size:24px;font-weight:800;color:${totalH>=40?'#10B981':'var(--red)'}">${totalH.toFixed(1)}</span> <span style="color:var(--text-3);font-size:14px">/ 40 hours this week</span></div>`;
+  gi('page-body').innerHTML=html;
+}
+
+// ════════════════════════════════════════════
+// HOLIDAYS
+// ════════════════════════════════════════════
+function pgHolidays(){
+  const yr=new Date().getFullYear();
+  const hols=DB.get('holidays').filter(h=>h.date&&h.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
+  let html='';
+  if(CU.role==='admin') html+=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openAddHoliday()">+ Add Holiday</button></div>`;
+  const rows=hols.map(h=>{
+    const dt2=new Date(h.date+'T12:00:00'); const past=dt2<new Date();
+    return`<tr style="${past?'opacity:.5':''}"><td><b>${esc(h.name)}</b></td><td>${fdate(h.date)}</td><td>${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt2.getDay()]}</td>
+    <td><span class="badge ${h.type==='national'?'br':'bo'}">${h.type}</span></td>
+    ${CU.role==='admin'?`<td><button class="btn btn-ghost btn-sm" onclick="delHoliday('${h.id}')">Del</button></td>`:''}`;
+  });
+  html+=tbl(CU.role==='admin'?['Name','Date','Day','Type','']:['Name','Date','Day','Type'],rows,'No holidays configured');
+  gi('page-body').innerHTML=html;
+}
+function openAddHoliday(){
+  modal('<h3>Add Holiday</h3>',
+    `<div class="fg"><label>Holiday Name</label><input id="hol-n" placeholder="e.g. Diwali"></div>
+     <div class="fg"><label>Date</label><input type="date" id="hol-d"></div>
+     <div class="fg"><label>Type</label><select id="hol-t"><option value="national">National</option><option value="festival">Festival</option><option value="optional">Optional</option></select></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doAddHoliday()">Add</button>`);
+}
+function doAddHoliday(){
+  const n=gv('hol-n'),d=gv('hol-d'); if(!n||!d) return toast('Fill all fields','error');
+  const arr=DB.get('holidays'); arr.push({id:'hol_'+Date.now(),name:n,date:d,type:gv('hol-t')||'national'});
+  DB.set('holidays',arr); toast('Holiday added','success'); closeModal(); navigate('holidays');
+}
+function delHoliday(id){if(!confirm('Remove?'))return;DB.set('holidays',DB.get('holidays').filter(h=>h.id!==id));navigate('holidays');}
+
+// ════════════════════════════════════════════
+// COMP-OFF
+// ════════════════════════════════════════════
+function pgCompOff(){
+  const cos=DB.get('compoffs');
+  let html=`<div class="sec-hdr"><span style="font-size:13px;color:var(--text-3)">Compensation off for working on holidays/weekends</span><button class="btn btn-primary btn-sm" onclick="openAddCompOff()">+ Add</button></div>`;
+  const rows=cos.map(c=>`<tr><td>${esc(c.uname)}</td><td>${fdate(c.workDate)}</td><td>${esc(c.reason)}</td><td>${fdate(c.compDate)||'—'}</td><td>${sbadge(c.status)}</td>
+    <td>${c.status==='pending'&&CU.role==='admin'?`<button class="btn btn-success btn-sm" onclick="approveCompOff('${c.id}')">Approve</button> <button class="btn btn-danger btn-sm" onclick="rejectCompOff('${c.id}')">Reject</button>`:''}</td></tr>`);
+  html+=tbl(['Employee','Work Date','Reason','Comp Date','Status',''],rows,'No comp-off records');
+  gi('page-body').innerHTML=html;
+}
+function pgMyCompOff(){
+  const cos=DB.get('compoffs').filter(c=>c.uid===CU.id);
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openAddCompOff()">Apply Comp-Off</button></div>`;
+  const rows=cos.map(c=>`<tr><td>${fdate(c.workDate)}</td><td>${esc(c.reason)}</td><td>${fdate(c.compDate)||'—'}</td><td>${sbadge(c.status)}</td></tr>`);
+  html+=tbl(['Work Date','Reason','Requested Date','Status'],rows,'No comp-off applications');
+  gi('page-body').innerHTML=html;
+}
+function openAddCompOff(){
+  modal('<h3>Apply Comp-Off</h3>',
+    `<div class="fg"><label>Date Worked (Holiday/Weekend)</label><input type="date" id="co-wd"></div>
+     <div class="fg"><label>Reason</label><input id="co-r" placeholder="e.g. Project deadline on Diwali"></div>
+     <div class="fg"><label>Preferred Comp-Off Date (optional)</label><input type="date" id="co-cd"></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCompOff()">Submit</button>`);
+}
+function submitCompOff(){
+  const wd=gv('co-wd'),r=gv('co-r'); if(!wd||!r) return toast('Fill required fields','error');
+  const arr=DB.get('compoffs');
+  arr.push({id:'co_'+Date.now(),uid:CU.id,uname:CU.name,workDate:wd,reason:r,compDate:gv('co-cd')||null,status:'pending',applied:td()});
+  DB.set('compoffs',arr); toast('Comp-off request submitted','success'); closeModal(); navigate('my-compoff');
+}
+function approveCompOff(id){const arr=DB.get('compoffs');const i=arr.findIndex(c=>c.id===id);if(i<0)return;arr[i].status='approved';arr[i].approvedBy=CU.name;DB.set('compoffs',arr);toast('Approved','success');navigate('comp-off');}
+function rejectCompOff(id){const arr=DB.get('compoffs');const i=arr.findIndex(c=>c.id===id);if(i<0)return;arr[i].status='rejected';DB.set('compoffs',arr);toast('Rejected','info');navigate('comp-off');}
+
+// ════════════════════════════════════════════
+// PAYROLL
+// ════════════════════════════════════════════
+function calcTax(annualGross){
+  if(annualGross<=250000) return 0;
+  if(annualGross<=500000) return Math.round((annualGross-250000)*0.05);
+  if(annualGross<=1000000) return Math.round(12500+(annualGross-500000)*0.20);
+  return Math.round(112500+(annualGross-1000000)*0.30);
+}
+function pgPayroll(){
+  const now=new Date(); const selM=gi('pr-month')?gi('pr-month').value:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const slips=DB.get('payslips').filter(p=>p.period===selM);
+  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
+    <input type="month" id="pr-month" value="${selM}" onchange="pgPayroll()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
+    <button class="btn btn-primary" onclick="runPayroll('${selM}')">Run Payroll</button>
+    <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips generated</span>
+  </div>`;
+  if(!slips.length){
+    // Show salary config
+    html+=`<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Salary Configuration</span><button class="btn btn-ghost btn-sm" onclick="navigate('payroll')">Configure</button></div><div class="card-body"><p style="font-size:13px;color:var(--text-3)">Configure salary structures before running payroll.</p></div></div>`;
+  }
+  const rows=users.map(u=>{
+    const slip=slips.find(s=>s.uid===u.id);
+    const cfg=DB.get('salaryConfig').find(s=>s.uid===u.id);
+    return`<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.dept)}</td>
+      <td>${cfg?`₹${cfg.basic.toLocaleString()}`:'-'}</td>
+      <td>${slip?`₹${slip.gross.toLocaleString()}`:'-'}</td>
+      <td>${slip?`₹${slip.deductions.toLocaleString()}`:'-'}</td>
+      <td>${slip?`<b style="color:#10B981">₹${slip.net.toLocaleString()}</b>`:'-'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openSalaryConfig('${u.id}','${esc(u.name)}')">Salary</button>${slip?` <button class="btn btn-ghost btn-sm" onclick="viewPayslip('${slip.id}')">Slip</button>`:''}</td></tr>`;
+  });
+  html+=tbl(['Employee','Dept','Basic','Gross','Deductions','Net Pay',''],rows,'No employees');
+  gi('page-body').innerHTML=html;
+}
+function openSalaryConfig(uid,uname){
+  const cfg=DB.get('salaryConfig').find(s=>s.uid===uid)||{basic:30000,hra:12000,ta:2000,allowances:5000,pf:true};
+  modal(`<h3>Salary Config — ${esc(uname)}</h3>`,
+    `<div class="grid-2">
+      <div class="fg"><label>Basic Salary (₹/mo)</label><input type="number" id="sc-b" value="${cfg.basic}"></div>
+      <div class="fg"><label>HRA (₹/mo)</label><input type="number" id="sc-h" value="${cfg.hra}"></div>
+      <div class="fg"><label>Transport Allowance</label><input type="number" id="sc-ta" value="${cfg.ta}"></div>
+      <div class="fg"><label>Other Allowances</label><input type="number" id="sc-a" value="${cfg.allowances}"></div>
+    </div>
+    <div class="toggle-row" style="margin-top:10px"><input type="checkbox" id="sc-pf" ${cfg.pf?'checked':''}><label for="sc-pf">Deduct PF (12% of Basic)</label></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveSalaryConfig('${uid}')">Save</button>`);
+}
+function saveSalaryConfig(uid){
+  const arr=DB.get('salaryConfig').filter(s=>s.uid!==uid);
+  arr.push({uid,basic:+gv('sc-b')||0,hra:+gv('sc-h')||0,ta:+gv('sc-ta')||0,allowances:+gv('sc-a')||0,pf:!!gi('sc-pf')?.checked});
+  DB.set('salaryConfig',arr); toast('Salary saved','success'); closeModal(); navigate('payroll');
+}
+function runPayroll(period){
+  if(!confirm(`Run payroll for ${period}? Existing slips will be overwritten.`)) return;
+  const [yr,mo]=period.split('-').map(Number);
+  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const existing=DB.get('payslips').filter(p=>p.period!==period);
+  const newSlips=[...existing];
+  users.forEach(u=>{
+    const cfg=DB.get('salaryConfig').find(s=>s.uid===u.id)||{basic:25000,hra:10000,ta:1600,allowances:3000,pf:true};
+    const gross=cfg.basic+cfg.hra+cfg.ta+cfg.allowances;
+    const pf=cfg.pf?Math.min(1800,Math.round(cfg.basic*0.12)):0;
+    const pt=gross>25000?200:gross>15000?150:gross>10000?100:0;
+    const tax=Math.round(calcTax(gross*12)/12);
+    const deductions=pf+pt+tax;
+    const net=gross-deductions;
+    newSlips.push({id:'slip_'+u.id+'_'+period,uid:u.id,uname:u.name,dept:u.dept,period,month:mo,year:yr,basic:cfg.basic,hra:cfg.hra,ta:cfg.ta,allowances:cfg.allowances,gross,pf,pt,tax,deductions,net,generatedBy:CU.name,generatedOn:td()});
+  });
+  DB.set('payslips',newSlips);
+  toast(`Payroll run — ${users.length} payslips generated`,'success'); navigate('payroll');
+}
+function pgPayslipsAdmin(){
+  const now=new Date(); const selM=gi('pa-month')?gi('pa-month').value:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const slips=DB.get('payslips').filter(p=>p.period===selM);
+  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+    <input type="month" id="pa-month" value="${selM}" onchange="pgPayslipsAdmin()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
+    <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips</span>
+  </div>`;
+  const rows=slips.map(s=>`<tr><td><b>${esc(s.uname)}</b></td><td>${esc(s.dept)}</td><td>₹${s.gross.toLocaleString()}</td><td>₹${s.deductions.toLocaleString()}</td><td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td><td><button class="btn btn-ghost btn-sm" onclick="viewPayslip('${s.id}')">View</button></td></tr>`);
+  html+=tbl(['Employee','Dept','Gross','Deductions','Net',''],rows,'No payslips for this month');
+  gi('page-body').innerHTML=html;
+}
+function pgMyPayslips(){
+  const slips=DB.get('payslips').filter(p=>p.uid===CU.id).sort((a,b)=>b.period.localeCompare(a.period));
+  const rows=slips.map(s=>`<tr><td><b>${s.period}</b></td><td>₹${s.gross.toLocaleString()}</td><td>₹${s.deductions.toLocaleString()}</td><td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td><td><button class="btn btn-ghost btn-sm" onclick="viewPayslip('${s.id}')">View / Download</button></td></tr>`);
+  gi('page-body').innerHTML=tbl(['Period','Gross','Deductions','Net Pay',''],rows,'No payslips yet. Ask admin to run payroll.');
+}
+function viewPayslip(id){
+  const s=DB.get('payslips').find(x=>x.id===id); if(!s) return;
+  const u=DB.get('users').find(x=>x.id===s.uid);
+  const w=window.open('','_blank'); if(!w)return;
+  w.document.write(`<!DOCTYPE html><html><head><title>Payslip ${s.period}</title>
+  <style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#1a1a1a}h1{font-size:22px;margin:0}.top{background:#0F172A;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center}.mid{padding:20px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none}.bottom{border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:0 24px 16px}table{width:100%;border-collapse:collapse;font-size:13px}tr{border-bottom:1px solid #f0f0f0}td{padding:7px 8px}.label{color:#64748B;width:180px}.val{font-weight:600}.total{background:#f0f9ff}.net{background:#0F172A;color:#fff}.net td{padding:12px 8px}.btn{background:#CC1414;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;margin-top:16px}@media print{.btn{display:none}}</style>
+  </head><body>
+  <div class="top"><div><h1>Zenex Partners</h1><div style="color:#94A3B8;font-size:13px">Payslip — ${s.period}</div></div><div style="text-align:right;font-size:13px">${s.generatedOn}</div></div>
+  <div class="mid"><table><tr><td class="label">Employee Name</td><td class="val">${esc(s.uname)}</td><td class="label">Department</td><td class="val">${esc(s.dept)}</td></tr>
+  <tr><td class="label">Employee ID</td><td class="val">${esc(s.uid)}</td><td class="label">Pay Period</td><td class="val">${s.period}</td></tr></table></div>
+  <div class="bottom">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+  <div><h3 style="font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;color:#64748B">Earnings</h3>
+  <table><tr><td class="label">Basic Salary</td><td>₹${s.basic.toLocaleString()}</td></tr>
+  <tr><td class="label">HRA</td><td>₹${s.hra.toLocaleString()}</td></tr>
+  <tr><td class="label">Transport Allowance</td><td>₹${s.ta.toLocaleString()}</td></tr>
+  <tr><td class="label">Other Allowances</td><td>₹${s.allowances.toLocaleString()}</td></tr>
+  <tr class="total"><td class="label"><b>Gross Pay</b></td><td><b>₹${s.gross.toLocaleString()}</b></td></tr></table></div>
+  <div><h3 style="font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;color:#64748B">Deductions</h3>
+  <table><tr><td class="label">Provident Fund</td><td>₹${s.pf.toLocaleString()}</td></tr>
+  <tr><td class="label">Professional Tax</td><td>₹${s.pt.toLocaleString()}</td></tr>
+  <tr><td class="label">Income Tax</td><td>₹${s.tax.toLocaleString()}</td></tr>
+  <tr class="total"><td class="label"><b>Total Deductions</b></td><td><b>₹${s.deductions.toLocaleString()}</b></td></tr></table></div></div>
+  <table style="margin-top:16px"><tr class="net"><td class="label" style="color:#94A3B8">Net Pay</td><td style="font-size:20px;font-weight:800;color:#4ADE80">₹${s.net.toLocaleString()}</td></tr></table>
+  <button class="btn" onclick="window.print()">🖨️ Print / Download PDF</button></div></body></html>`);
+  w.document.close();
+}
+
+// ════════════════════════════════════════════
+// EXPENSES
+// ════════════════════════════════════════════
+const EXP_CATS=['Travel','Meals','Accommodation','Office Supplies','Software','Training','Medical','Other'];
+function pgExpensesAdmin(){
+  const exps=DB.get('expenses');
+  const pending=exps.filter(e=>e.status==='pending');
+  let html=`<div class="stat-grid">${sc2(pending.length,'Pending',`#F59E0B`)}${sc2(exps.filter(e=>e.status==='approved').length,'Approved','#10B981')}${sc2('₹'+exps.filter(e=>e.status==='approved').reduce((s,e)=>s+e.amount,0).toLocaleString(),'Total Approved','#0369A1')}</div>`;
+  const rows=exps.sort((a,b)=>b.date.localeCompare(a.date)).map(e=>`<tr>
+    <td><b>${esc(e.uname)}</b></td><td>${esc(e.title)}</td><td><span class="badge bb">${esc(e.category)}</span></td>
+    <td><b>₹${e.amount.toLocaleString()}</b></td><td>${fdate(e.date)}</td><td>${sbadge(e.status)}</td>
+    <td>${e.status==='pending'?`<button class="btn btn-success btn-sm" onclick="reviewExpense('${e.id}','approved')">✓</button> <button class="btn btn-danger btn-sm" onclick="reviewExpense('${e.id}','rejected')">✗</button>`:''} ${e.receipt?`<button class="btn btn-ghost btn-sm" onclick="viewReceipt('${e.id}')">Receipt</button>`:''}</td></tr>`);
+  html+=tbl(['Employee','Title','Category','Amount','Date','Status',''],rows,'No expense claims');
+  gi('page-body').innerHTML=html;
+}
+function pgMyExpenses(){
+  const exps=DB.get('expenses').filter(e=>e.uid===CU.id);
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openAddExpense()">+ Submit Claim</button></div>`;
+  const rows=exps.sort((a,b)=>b.date.localeCompare(a.date)).map(e=>`<tr>
+    <td>${esc(e.title)}</td><td>${esc(e.category)}</td><td><b>₹${e.amount.toLocaleString()}</b></td>
+    <td>${fdate(e.date)}</td><td>${sbadge(e.status)}</td>
+    <td>${e.receipt?`<button class="btn btn-ghost btn-sm" onclick="viewReceipt('${e.id}')">Receipt</button>`:''}</td></tr>`);
+  html+=tbl(['Title','Category','Amount','Date','Status',''],rows,'No expense claims submitted');
+  gi('page-body').innerHTML=html;
+}
+function openAddExpense(){
+  modal('<h3>Submit Expense Claim</h3>',
+    `<div class="fg"><label>Title</label><input id="ex-t" placeholder="e.g. Client dinner — Mumbai"></div>
+     <div class="grid-2">
+       <div class="fg"><label>Amount (₹)</label><input type="number" id="ex-a" min="1" placeholder="0"></div>
+       <div class="fg"><label>Date</label><input type="date" id="ex-d" value="${td()}"></div>
+     </div>
+     <div class="fg"><label>Category</label><select id="ex-c">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+     <div class="fg"><label>Receipt (optional)</label><input type="file" id="ex-f" accept="image/*,.pdf" onchange="readExpFile(this)"></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitExpense()">Submit</button>`);
+}
+let _expReceipt=null;
+function readExpFile(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{_expReceipt=e.target.result;};r.readAsDataURL(f);}
+function submitExpense(){
+  const t=gv('ex-t'),a=gv('ex-a'),d=gv('ex-d');
+  if(!t||!a) return toast('Title and amount required','error');
+  const arr=DB.get('expenses');
+  arr.push({id:'ex_'+Date.now(),uid:CU.id,uname:CU.name,dept:CU.dept,title:t,amount:+a,category:gv('ex-c'),date:d||td(),status:'pending',submitted:td(),receipt:_expReceipt||null});
+  DB.set('expenses',arr); _expReceipt=null;
+  addNotif('Expense Submitted',`₹${a} claim for "${t}" submitted for approval.`,'info');
+  toast('Expense submitted','success'); closeModal(); navigate('my-expenses');
+}
+function reviewExpense(id,status){
+  const arr=DB.get('expenses'); const i=arr.findIndex(e=>e.id===id); if(i<0)return;
+  arr[i].status=status; arr[i].reviewedBy=CU.name; arr[i].reviewedOn=td();
+  DB.set('expenses',arr); toast('Expense '+status,'success'); navigate('expenses-admin');
+}
+function viewReceipt(id){
+  const e=DB.get('expenses').find(x=>x.id===id); if(!e||!e.receipt)return;
+  const w=window.open('','_blank'); w.document.write(`<img src="${e.receipt}" style="max-width:100%;height:auto">`); w.document.close();
+}
+
+// ════════════════════════════════════════════
+// ASSETS
+// ════════════════════════════════════════════
+const ASSET_TYPES=['Laptop','Desktop','Monitor','Mouse/Keyboard','Phone','Headset','ID Card','Access Card','Other'];
+function pgAssets(){
+  const assets=DB.get('assets'); const users=DB.get('users').filter(u=>u.active);
+  const umap={}; users.forEach(u=>umap[u.id]=u.name);
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openAddAsset()">+ Add Asset</button></div>`;
+  const rows=assets.map(a=>`<tr>
+    <td><b>${esc(a.name)}</b></td><td>${esc(a.type)}</td><td style="font-size:11px;color:var(--text-3)">${esc(a.serial||'—')}</td>
+    <td>${a.assignedTo?(umap[a.assignedTo]||a.assignedTo):'<span style="color:var(--text-3)">Unassigned</span>'}</td>
+    <td>${a.assignedOn?fdate(a.assignedOn):'—'}</td>
+    <td><span class="badge ${a.status==='assigned'?'bg':a.status==='returned'?'bb':'by'}">${a.status}</span></td>
+    <td>
+      ${!a.assignedTo?`<button class="btn btn-ghost btn-sm" onclick="openAssignAsset('${a.id}')">Assign</button>`:''}
+      ${a.assignedTo?`<button class="btn btn-ghost btn-sm" onclick="returnAsset('${a.id}')">Return</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="delAsset('${a.id}')">Del</button>
+    </td></tr>`);
+  html+=tbl(['Name','Type','Serial No.','Assigned To','Assigned On','Status',''],rows,'No assets. Add your first asset above.');
+  gi('page-body').innerHTML=html;
+}
+function openAddAsset(){
+  modal('<h3>Add Asset</h3>',
+    `<div class="fg"><label>Asset Name</label><input id="as-n" placeholder="e.g. Dell Laptop XPS 15"></div>
+     <div class="grid-2">
+       <div class="fg"><label>Type</label><select id="as-t">${ASSET_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+       <div class="fg"><label>Serial Number</label><input id="as-s" placeholder="Optional"></div>
+     </div>
+     <div class="fg"><label>Notes</label><input id="as-note" placeholder="Optional notes"></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAsset()">Add</button>`);
+}
+function saveAsset(){
+  const n=gv('as-n'); if(!n) return toast('Name required','error');
+  DB.set('assets',[...DB.get('assets'),{id:'ast_'+Date.now(),name:n,type:gv('as-t'),serial:gv('as-s'),notes:gv('as-note'),status:'available',assignedTo:null,assignedOn:null}]);
+  toast('Asset added','success'); closeModal(); navigate('assets');
+}
+function openAssignAsset(id){
+  const users=DB.get('users').filter(u=>u.active&&u.role==='employee');
+  modal('<h3>Assign Asset</h3>',
+    `<div class="fg"><label>Employee</label><select id="asg-u"><option value="">Select employee...</option>${users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doAssignAsset('${id}')">Assign</button>`);
+}
+function doAssignAsset(id){
+  const uid=gv('asg-u'); if(!uid) return toast('Select employee','error');
+  const arr=DB.get('assets'); const i=arr.findIndex(a=>a.id===id); if(i<0)return;
+  arr[i].assignedTo=uid; arr[i].assignedOn=td(); arr[i].status='assigned';
+  DB.set('assets',arr); toast('Asset assigned','success'); closeModal(); navigate('assets');
+}
+function returnAsset(id){
+  if(!confirm('Mark asset as returned?'))return;
+  const arr=DB.get('assets'); const i=arr.findIndex(a=>a.id===id); if(i<0)return;
+  arr[i].assignedTo=null; arr[i].returnedOn=td(); arr[i].status='returned';
+  DB.set('assets',arr); toast('Asset returned','success'); navigate('assets');
+}
+function delAsset(id){if(!confirm('Delete asset?'))return;DB.set('assets',DB.get('assets').filter(a=>a.id!==id));navigate('assets');}
+function pgMyAssets(){
+  const assets=DB.get('assets').filter(a=>a.assignedTo===CU.id);
+  const rows=assets.map(a=>`<tr><td><b>${esc(a.name)}</b></td><td>${esc(a.type)}</td><td>${esc(a.serial||'—')}</td><td>${fdate(a.assignedOn)}</td><td><span class="badge bg">Assigned</span></td></tr>`);
+  gi('page-body').innerHTML=tbl(['Name','Type','Serial No.','Assigned On','Status'],rows,'No assets assigned to you');
+}
+
+// ════════════════════════════════════════════
+// HELPDESK & TICKETING
+// ════════════════════════════════════════════
+const TIX_CATS=['HR Support','IT Support','Payroll Query','Leave Query','Asset Request','General Request','Other'];
+function pgHelpdeskAdmin(){
+  const tix=DB.get('tickets');
+  let html=`<div class="stat-grid">${sc2(tix.filter(t=>t.status==='open').length,'Open','#CC1414')}${sc2(tix.filter(t=>t.status==='in-progress').length,'In Progress','#F59E0B')}${sc2(tix.filter(t=>t.status==='closed').length,'Closed','#10B981')}</div>`;
+  const rows=tix.sort((a,b)=>b.createdOn.localeCompare(a.createdOn)).map(t=>`<tr>
+    <td><b>${esc(t.title)}</b><br><span style="font-size:11px;color:var(--text-3)">${esc(t.category)}</span></td>
+    <td>${esc(t.uname)}</td>
+    <td><span class="badge ${t.priority==='high'?'br':t.priority==='medium'?'by':'bb'}">${t.priority}</span></td>
+    <td><span class="badge ${t.status==='open'?'br':t.status==='in-progress'?'by':'bg'}">${t.status}</span></td>
+    <td>${fdate(t.createdOn)}</td>
+    <td><button class="btn btn-ghost btn-sm" onclick="viewTicket('${t.id}')">Open</button></td></tr>`);
+  html+=tbl(['Title','Raised By','Priority','Status','Date',''],rows,'No support tickets');
+  gi('page-body').innerHTML=html;
+}
+function pgMyTickets(){
+  const tix=DB.get('tickets').filter(t=>t.uid===CU.id);
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openNewTicket()">+ Raise Ticket</button></div>`;
+  const rows=tix.sort((a,b)=>b.createdOn.localeCompare(a.createdOn)).map(t=>`<tr>
+    <td><b>${esc(t.title)}</b></td><td>${esc(t.category)}</td>
+    <td><span class="badge ${t.priority==='high'?'br':t.priority==='medium'?'by':'bb'}">${t.priority}</span></td>
+    <td><span class="badge ${t.status==='open'?'br':t.status==='in-progress'?'by':'bg'}">${t.status}</span></td>
+    <td><button class="btn btn-ghost btn-sm" onclick="viewTicket('${t.id}')">View</button></td></tr>`);
+  html+=tbl(['Title','Category','Priority','Status',''],rows,'No tickets raised. Click "Raise Ticket" to get help.');
+  gi('page-body').innerHTML=html;
+}
+function openNewTicket(){
+  modal('<h3>Raise Support Ticket</h3>',
+    `<div class="fg"><label>Title</label><input id="tx-t" placeholder="Brief description of the issue"></div>
+     <div class="grid-2">
+       <div class="fg"><label>Category</label><select id="tx-c">${TIX_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+       <div class="fg"><label>Priority</label><select id="tx-p"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+     </div>
+     <div class="fg"><label>Description</label><textarea id="tx-d" placeholder="Detailed description..." style="min-height:100px"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitTicket()">Submit</button>`);
+}
+function submitTicket(){
+  const t=gv('tx-t'),d=gv('tx-d'); if(!t) return toast('Title required','error');
+  const arr=DB.get('tickets');
+  const id='tix_'+Date.now();
+  arr.push({id,uid:CU.id,uname:CU.name,title:t,category:gv('tx-c'),priority:gv('tx-p'),description:d,status:'open',createdOn:td(),messages:[]});
+  DB.set('tickets',arr);
+  addNotif('Ticket Raised',`Your ticket "${t}" has been submitted.`,'info');
+  toast('Ticket submitted','success'); closeModal();
+  if(CU.role==='admin') navigate('helpdesk-admin'); else navigate('my-tickets');
+}
+function viewTicket(id){
+  const tix=DB.get('tickets'); const i=tix.findIndex(t=>t.id===id); if(i<0)return;
+  const t=tix[i];
+  const msgs=t.messages||[];
+  const prioColor=t.priority==='high'?'#CC1414':t.priority==='medium'?'#F59E0B':'#0369A1';
+  let html=`<div style="padding:4px 0 12px"><span class="badge ${t.status==='open'?'br':t.status==='in-progress'?'by':'bg'}" style="margin-right:8px">${t.status}</span><span class="badge" style="background:${prioColor};color:#fff">${t.priority}</span></div>
+    <p style="font-size:13px;color:var(--text);background:var(--muted);padding:12px;border-radius:8px;margin-bottom:16px">${esc(t.description)}</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">${msgs.length?msgs.map(m=>`<div style="background:${m.by===CU.name?'#EFF6FF':'var(--muted)'};padding:10px 14px;border-radius:8px;align-self:${m.by===CU.name?'flex-end':'flex-start'};max-width:80%"><div style="font-size:11px;color:var(--text-3);margin-bottom:3px">${esc(m.by)} · ${fdate(m.date)}</div><div style="font-size:13px">${esc(m.msg)}</div></div>`).join(''):'<div style="text-align:center;color:var(--text-3);font-size:12px">No messages yet</div>'}</div>
+    <div class="fg"><textarea id="tx-reply" placeholder="Type a reply..." style="min-height:70px"></textarea></div>`;
+  const actions=`<button class="btn btn-ghost" onclick="closeModal()">Close</button>
+    ${CU.role==='admin'&&t.status!=='closed'?`<select id="tx-st" style="border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:var(--font)"><option value="open" ${t.status==='open'?'selected':''}>Open</option><option value="in-progress" ${t.status==='in-progress'?'selected':''}>In Progress</option><option value="closed">Closed</option></select>`:''}
+    <button class="btn btn-primary" onclick="replyTicket('${id}')">Send Reply</button>`;
+  modal(`<h3>🎫 ${esc(t.title)}</h3>`,html,actions);
+}
+function replyTicket(id){
+  const msg=gi('tx-reply')?.value?.trim(); if(!msg&&CU.role!=='admin') return toast('Enter a message','error');
+  const tix=DB.get('tickets'); const i=tix.findIndex(t=>t.id===id); if(i<0)return;
+  if(msg) tix[i].messages.push({by:CU.name,msg,date:td()});
+  if(CU.role==='admin'&&gi('tx-st')) tix[i].status=gi('tx-st').value;
+  DB.set('tickets',tix); toast('Reply sent','success'); closeModal();
+  if(CU.role==='admin') navigate('helpdesk-admin'); else navigate('my-tickets');
+}
+
+// ════════════════════════════════════════════
+// RECOGNITION
+// ════════════════════════════════════════════
+const BADGES=['🌟 Star Performer','💡 Innovator','🤝 Team Player','🏆 Above & Beyond','❤️ Culture Champion','🚀 Go-Getter'];
+function pgRecognitionAdmin(){
+  const recs=DB.get('recognition');
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openGiveKudos()">+ Give Recognition</button></div>`;
+  html+=_recognitionWall(recs);
+  gi('page-body').innerHTML=html;
+}
+function pgRecognition(){
+  const recs=DB.get('recognition');
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openGiveKudos()">+ Give Kudos</button></div>`;
+  html+=_recognitionWall(recs);
+  gi('page-body').innerHTML=html;
+}
+function _recognitionWall(recs){
+  if(!recs.length) return`<div class="card"><div class="card-body"><div class="empty-state">No recognition yet. Be the first to appreciate someone!</div></div></div>`;
+  return`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">`+recs.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`
+    <div class="card" style="padding:18px;border-top:3px solid #F59E0B">
+      <div style="font-size:24px;margin-bottom:8px">${r.badge.split(' ')[0]}</div>
+      <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:4px">${esc(r.badge)}</div>
+      <div style="font-size:13px;color:var(--text);margin-bottom:8px">"${esc(r.message)}"</div>
+      <div style="font-size:11px;color:var(--text-3)">To: <b>${esc(r.toName)}</b> · From: ${esc(r.fromName)} · ${fdate(r.date)}</div>
+    </div>`).join('')+`</div>`;
+}
+function openGiveKudos(){
+  const users=DB.get('users').filter(u=>u.active&&u.id!==CU.id);
+  modal('<h3>Give Recognition</h3>',
+    `<div class="fg"><label>Recognise</label><select id="rc-u"><option value="">Select employee...</option>${users.map(u=>`<option value="${u.id}|${esc(u.name)}">${esc(u.name)}</option>`).join('')}</select></div>
+     <div class="fg"><label>Badge</label><select id="rc-b">${BADGES.map(b=>`<option>${b}</option>`).join('')}</select></div>
+     <div class="fg"><label>Message</label><textarea id="rc-m" placeholder="Why do they deserve this recognition?"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRecognition()">Recognise</button>`);
+}
+function submitRecognition(){
+  const v=gv('rc-u'); if(!v) return toast('Select an employee','error');
+  const msg=gv('rc-m'); if(!msg) return toast('Add a message','error');
+  const [toUid,toName]=v.split('|');
+  DB.set('recognition',[...DB.get('recognition'),{id:'rc_'+Date.now(),fromUid:CU.id,fromName:CU.name,toUid,toName,badge:gv('rc-b'),message:msg,date:td()}]);
+  addNotif('You\'ve been recognised!',`${CU.name} gave you "${gv('rc-b')}" recognition.`,'info');
+  toast('Recognition sent!','success'); closeModal();
+  navigate(CU.role==='admin'?'recognition-admin':'recognition');
+}
+
+// ════════════════════════════════════════════
+// POLLS & SURVEYS
+// ════════════════════════════════════════════
+function pgPollsAdmin(){
+  const polls=DB.get('polls');
+  let html=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openCreatePoll()">+ Create Poll</button></div>`;
+  html+=_pollCards(polls,true);
+  gi('page-body').innerHTML=html;
+}
+function pgPolls(){
+  const polls=DB.get('polls').filter(p=>p.active);
+  gi('page-body').innerHTML=_pollCards(polls,false);
+}
+function _pollCards(polls,isAdmin){
+  if(!polls.length) return`<div class="card"><div class="card-body"><div class="empty-state">${isAdmin?'No polls yet':'No active polls right now'}</div></div></div>`;
+  return`<div style="display:flex;flex-direction:column;gap:14px">`+polls.map(p=>{
+    const total=p.options.reduce((s,o)=>s+(o.votes||[]).length,0);
+    const voted=p.options.some(o=>(o.votes||[]).includes(CU.id));
+    return`<div class="card" style="padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div><div style="font-size:15px;font-weight:700;color:var(--text)">${esc(p.question)}</div><div style="font-size:11px;color:var(--text-3);margin-top:2px">By ${esc(p.createdBy)} · ${fdate(p.date)} · ${total} vote${total!==1?'s':''}</div></div>
+        ${isAdmin?`<div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="togglePoll('${p.id}')">${p.active?'Close':'Open'}</button><button class="btn btn-danger btn-sm" onclick="deletePoll('${p.id}')">Del</button></div>`:''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${p.options.map((o,idx)=>{
+          const pct=total?Math.round(((o.votes||[]).length/total)*100):0;
+          const myVote=(o.votes||[]).includes(CU.id);
+          return`<div>
+            ${!voted&&p.active&&!isAdmin?`<button onclick="votePoll('${p.id}',${idx})" style="width:100%;text-align:left;background:var(--muted);border:1.5px solid ${myVote?'var(--red)':'var(--border)'};border-radius:8px;padding:9px 12px;cursor:pointer;font-family:var(--font);font-size:13px">${esc(o.text)}</button>`
+            :`<div style="position:relative;background:var(--muted);border-radius:8px;overflow:hidden"><div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:${myVote?'rgba(204,20,20,.15)':'rgba(3,105,161,.1)'};transition:width .4s"></div><div style="position:relative;padding:9px 12px;display:flex;justify-content:space-between;font-size:13px"><span>${esc(o.text)}</span><span style="font-weight:700;color:var(--text)">${pct}%</span></div></div>`}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('')+`</div>`;
+}
+function openCreatePoll(){
+  modal('<h3>Create Poll</h3>',
+    `<div class="fg"><label>Question</label><input id="pl-q" placeholder="What would you like to ask?"></div>
+     <div class="fg"><label>Options (one per line, min 2)</label><textarea id="pl-o" placeholder="Yes\nNo\nMaybe" style="min-height:90px"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createPoll()">Create</button>`);
+}
+function createPoll(){
+  const q=gv('pl-q'); const opts=gi('pl-o').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!q) return toast('Enter a question','error');
+  if(opts.length<2) return toast('Need at least 2 options','error');
+  DB.set('polls',[...DB.get('polls'),{id:'pl_'+Date.now(),question:q,options:opts.map(t=>({text:t,votes:[]})),createdBy:CU.name,date:td(),active:true}]);
+  toast('Poll created','success'); closeModal(); navigate('polls-admin');
+}
+function votePoll(id,optIdx){
+  const polls=DB.get('polls'); const i=polls.findIndex(p=>p.id===id); if(i<0)return;
+  if(!polls[i].options[optIdx].votes) polls[i].options[optIdx].votes=[];
+  polls[i].options[optIdx].votes.push(CU.id);
+  DB.set('polls',polls); toast('Vote recorded','success'); navigate('polls');
+}
+function togglePoll(id){const polls=DB.get('polls');const i=polls.findIndex(p=>p.id===id);if(i<0)return;polls[i].active=!polls[i].active;DB.set('polls',polls);navigate('polls-admin');}
+function deletePoll(id){if(!confirm('Delete poll?'))return;DB.set('polls',DB.get('polls').filter(p=>p.id!==id));navigate('polls-admin');}
 
 // ════════════════════════════════════════════
 // INIT
