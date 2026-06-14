@@ -3430,6 +3430,11 @@ function reviewLeave(id, status, comment) {
   dbSet('leaves', leaves);
   lg(CU.id, CU.name, 'LEAVE_REVIEW', `${status.toUpperCase()} leave for ${lv.uname} (${lv.sd} to ${lv.ed})`);
 
+  // Deduct balance only on approval (not rejection)
+  if (status === 'approved') {
+    deductBalance(lv);
+  }
+
   // Notify the requestor (in-app)
   const notifMsg = `Your ${lv.type} leave (${fdate(lv.sd)} – ${fdate(lv.ed)}, ${lv.days} day${lv.days>1?'s':''}) has been ${status} by ${CU.name}.${comment ? ' Comment: ' + comment : ''}`;
   const notifs = DB.get('notifications');
