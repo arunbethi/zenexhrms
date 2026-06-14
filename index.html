@@ -1243,6 +1243,30 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
   #page-body { padding: var(--s3); }
 }
 
+
+/* ── EMPLOYEE DRAWER ── */
+.emp-drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;opacity:0;pointer-events:none;transition:opacity .3s}
+.emp-drawer-overlay.open{opacity:1;pointer-events:all}
+.emp-drawer{position:fixed;top:0;right:0;width:70%;max-width:960px;height:100vh;background:var(--surface);box-shadow:-6px 0 40px rgba(0,0,0,.18);z-index:201;transform:translateX(100%);transition:transform .32s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;overflow:hidden}
+.emp-drawer.open{transform:translateX(0)}
+.emp-drawer-hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 28px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface)}
+.emp-drawer-hdr h3{margin:0;font-size:18px;font-weight:700;color:var(--text)}
+.emp-drawer-body{flex:1;overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:24px}
+.emp-drawer-ftr{padding:16px 28px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;flex-shrink:0;background:var(--surface)}
+.form-section{display:flex;flex-direction:column;gap:14px}
+.form-section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--primary);padding-bottom:8px;border-bottom:2px solid var(--primary-light);margin-bottom:4px}
+.doc-upload-row{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;gap:12px;flex-wrap:wrap}
+.doc-upload-info{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.doc-upload-icon{width:36px;height:36px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.doc-upload-name{font-size:13.5px;font-weight:600;color:var(--text)}
+.doc-upload-status{font-size:11px;color:var(--text-3);margin-top:1px}
+.doc-upload-status.uploaded{color:#16a34a;font-weight:600}
+.doc-btn{font-size:12px;padding:6px 14px;white-space:nowrap}
+@media(max-width:768px){
+  .emp-drawer{width:100%}
+  .emp-drawer-body{padding:16px}
+  .emp-drawer-hdr,.emp-drawer-ftr{padding:14px 16px}
+}
 </style>
 </head>
 <body>
@@ -1404,6 +1428,21 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
 
 <!-- TOAST -->
 <div id="toast"></div>
+
+<!-- EMPLOYEE DRAWER -->
+<div id="emp-drawer-overlay" class="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
+<div id="emp-drawer" class="emp-drawer">
+  <div class="emp-drawer-hdr">
+    <h3 id="emp-drawer-title">Add Employee</h3>
+    <button class="btn btn-ghost btn-sm" onclick="closeEmpDrawer()">✕ Close</button>
+  </div>
+  <div class="emp-drawer-body" id="emp-drawer-body"></div>
+  <div class="emp-drawer-ftr">
+    <button class="btn btn-ghost" onclick="closeEmpDrawer()">Cancel</button>
+    <button class="btn btn-primary" id="emp-drawer-save" onclick="submitEmpForm()">Add Employee</button>
+  </div>
+</div>
+
 
 <!-- SP LOADING OVERLAY -->
 <div id="sp-loading" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.88);z-index:60;align-items:center;justify-content:center;flex-direction:column;gap:16px">
@@ -2556,7 +2595,7 @@ function saveEmp(data, eid) {
     lg(CU.id, CU.name, 'ADD_EMP', 'Added employee: ' + data.name);
     toast('Employee added', 'success');
   }
-  closeModal(); pgEmps();
+  closeEmpDrawer(); pgEmps();
 }
 function toggleEmp(uid) {
   const users = DB.get('users');
@@ -2843,31 +2882,159 @@ function filterEmps(q) {
   gi('emp-tb').innerHTML=empRows(DB.get('users').filter(u=>u.active!==false&&(u.name.toLowerCase().includes(ql)||u.dept.toLowerCase().includes(ql)||u.position.toLowerCase().includes(ql))));
 }
 
-function empForm(u){
-  return `<div class="grid-2">
-    <div class="fg"><label>Full Name *</label><input id="ef-name" type="text" value="${esc(u?u.name:'')}"></div>
-    <div class="fg"><label>Username *</label><input id="ef-user" type="text" value="${esc(u?u.username:'')}"></div>
-  </div><div class="grid-2">
-    <div class="fg"><label>Password *</label><input id="ef-pw" type="password" value="${esc(u?u.password:'')}"></div>
-    <div class="fg"><label>Email</label><input id="ef-email" type="email" value="${esc(u?u.email:'')}"></div>
-  </div><div class="grid-2">
-    <div class="fg"><label>Department</label><input id="ef-dept" type="text" value="${esc(u?u.dept:'')}"></div>
-    <div class="fg"><label>Position</label><input id="ef-pos" type="text" value="${esc(u?u.position:'')}"></div>
-  </div><div class="grid-2">
-    <div class="fg"><label>Phone</label><input id="ef-phone" type="tel" value="${esc(u?u.phone:'')}"></div>
-    <div class="fg"><label>Join Date</label><input id="ef-join" type="date" value="${u?u.join:''}"></div>
-  </div><div class="grid-2">
-    <div class="fg"><label>Emergency Contact</label><input id="ef-emg" type="text" value="${esc(u?u.emergency:'')}"></div>
-    <div class="fg"><label>Emergency Phone</label><input id="ef-emgp" type="tel" value="${esc(u?u.emergencyPhone:'')}"></div>
-  </div>
-  <div class="fg"><label>Role</label><select id="ef-role"><option value="employee" ${!u||u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u&&u.role==='admin'?'selected':''}>Administrator</option></select></div>`;
+const DOC_TYPES = [
+  { key:'aadhaar', label:'Aadhaar Card', icon:'🪪' },
+  { key:'pan',     label:'PAN Card',     icon:'💳' },
+  { key:'driving', label:"Driver's License", icon:'🚗' },
+  { key:'philsys', label:'PhilSys National ID', icon:'🆔' }
+];
+
+let _empDrawerUid = null;
+
+function openAddEmp() {
+  _empDrawerUid = null;
+  gi('emp-drawer-title').textContent = 'Add Employee';
+  gi('emp-drawer-save').textContent = 'Add Employee';
+  gi('emp-drawer-save').onclick = () => submitEmpForm(null);
+  gi('emp-drawer-body').innerHTML = buildEmpDrawerBody(null);
+  gi('emp-drawer-overlay').classList.add('open');
+  gi('emp-drawer').classList.add('open');
+  document.body.style.overflow = 'hidden';
 }
 
-function openAddEmp(){ modal('<h3>Add Employee</h3>',empForm(),`<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEmpForm()">Add Employee</button>`); }
-function openEditEmp(uid){ const u=DB.get('users').find(x=>x.id===uid);if(!u)return; modal('<h3>Edit Employee</h3>',empForm(u),`<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitEmpForm('${uid}')">Save Changes</button>`); }
+function openEditEmp(uid) {
+  const u = DB.get('users').find(x => x.id === uid);
+  if (!u) return;
+  _empDrawerUid = uid;
+  gi('emp-drawer-title').textContent = 'Edit Employee';
+  gi('emp-drawer-save').textContent = 'Save Changes';
+  gi('emp-drawer-save').onclick = () => submitEmpForm(uid);
+  gi('emp-drawer-body').innerHTML = buildEmpDrawerBody(u);
+  gi('emp-drawer-overlay').classList.add('open');
+  gi('emp-drawer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
 
-function submitEmpForm(eid){
-  saveEmp({name:gv('ef-name'),username:gv('ef-user'),password:gv('ef-pw'),email:gv('ef-email'),dept:gv('ef-dept'),position:gv('ef-pos'),phone:gv('ef-phone'),join:gv('ef-join'),emergency:gv('ef-emg'),emergencyPhone:gv('ef-emgp'),role:gv('ef-role')},eid||null);
+function closeEmpDrawer() {
+  gi('emp-drawer-overlay').classList.remove('open');
+  gi('emp-drawer').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function buildEmpDrawerBody(u) {
+  const docs = DB.get('documents') || [];
+  const uid = u ? u.id : null;
+  const userDocs = uid ? docs.filter(d => d.uid === uid) : [];
+  const getDoc = (key) => userDocs.find(d => d.type === key);
+
+  const docRows = DOC_TYPES.map(dt => {
+    const existing = getDoc(dt.key);
+    return `<div class="doc-upload-row">
+      <div class="doc-upload-info">
+        <div class="doc-upload-icon">${dt.icon}</div>
+        <div>
+          <div class="doc-upload-name">${dt.label}</div>
+          <div class="doc-upload-status ${existing ? 'uploaded' : ''}" id="doc-status-${dt.key}">
+            ${existing ? '✓ Uploaded — ' + existing.name : 'Not uploaded'}
+          </div>
+        </div>
+      </div>
+      <label class="btn btn-ghost doc-btn" style="cursor:pointer">
+        ${existing ? 'Replace' : 'Upload'}
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png" style="display:none"
+          onchange="handleDocUpload(this,'${dt.key}','${dt.label}','${uid||'__new__'}')">
+      </label>
+      ${existing ? `<button class="btn btn-danger doc-btn" onclick="removeDoc('${dt.key}','${uid||'__new__'}')">Remove</button>` : ''}
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="form-section">
+      <div class="form-section-title">Basic Information</div>
+      <div class="grid-2">
+        <div class="fg"><label>Full Name *</label><input id="ef-name" type="text" placeholder="Enter full name" value="${esc(u?u.name:'')}"></div>
+        <div class="fg"><label>Username *</label><input id="ef-user" type="text" placeholder="login username" value="${esc(u?u.username:'')}"></div>
+      </div>
+      <div class="grid-2">
+        <div class="fg"><label>Password ${u?'(leave blank to keep)':' *'}</label><input id="ef-pw" type="password" placeholder="${u?'Leave blank to keep current':''}" value="${esc(u?u.password:'')}"></div>
+        <div class="fg"><label>Email</label><input id="ef-email" type="email" placeholder="work@zenexpartners.net" value="${esc(u?u.email:'')}"></div>
+      </div>
+      <div class="grid-2">
+        <div class="fg"><label>Role</label><select id="ef-role"><option value="employee" ${!u||u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u&&u.role==='admin'?'selected':''}>Administrator</option></select></div>
+        <div class="fg"><label>Join Date</label><input id="ef-join" type="date" value="${u?u.join:''}"></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Work Details</div>
+      <div class="grid-2">
+        <div class="fg"><label>Department</label><input id="ef-dept" type="text" placeholder="e.g. Engineering" value="${esc(u?u.dept:'')}"></div>
+        <div class="fg"><label>Position / Job Title</label><input id="ef-pos" type="text" placeholder="e.g. Software Engineer" value="${esc(u?u.position:'')}"></div>
+      </div>
+      <div class="grid-2">
+        <div class="fg"><label>Phone</label><input id="ef-phone" type="tel" placeholder="+91 98765 43210" value="${esc(u?u.phone:'')}"></div>
+        <div class="fg"><label>Manager Email</label><input id="ef-mgr" type="email" placeholder="manager@zenexpartners.net" value="${esc(u?u.managerEmail:'')}"></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Government ID Numbers</div>
+      <div class="grid-2">
+        <div class="fg"><label>Aadhaar Card Number</label><input id="ef-aadhaar" type="text" maxlength="14" placeholder="XXXX XXXX XXXX" value="${esc(u?u.aadhaar:'')}"></div>
+        <div class="fg"><label>PAN Card Number</label><input id="ef-pan" type="text" maxlength="10" placeholder="ABCDE1234F" style="text-transform:uppercase" value="${esc(u?u.pan:'')}"></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Emergency Contact</div>
+      <div class="grid-2">
+        <div class="fg"><label>Contact Name</label><input id="ef-emg" type="text" placeholder="Emergency contact name" value="${esc(u?u.emergency:'')}"></div>
+        <div class="fg"><label>Contact Phone</label><input id="ef-emgp" type="tel" placeholder="Emergency contact number" value="${esc(u?u.emergencyPhone:'')}"></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Documents</div>
+      <div style="display:flex;flex-direction:column;gap:10px">${docRows}</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:4px">Accepted formats: PDF, JPG, PNG · Max 5MB per file</div>
+    </div>`;
+}
+
+function handleDocUpload(input, docType, docLabel, uid) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast('File too large. Max 5MB.','error'); return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const docs = DB.get('documents') || [];
+    const idx = docs.findIndex(d => d.uid === uid && d.type === docType);
+    const rec = { id:'doc_'+Date.now(), uid, type:docType, label:docLabel, name:file.name, data:e.target.result, uploadedAt:new Date().toISOString() };
+    if (idx >= 0) docs[idx] = rec; else docs.push(rec);
+    DB.set('documents', docs);
+    const statusEl = gi('doc-status-'+docType);
+    if (statusEl) { statusEl.textContent = '✓ Uploaded — ' + file.name; statusEl.className = 'doc-upload-status uploaded'; }
+    toast(docLabel + ' uploaded','success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeDoc(docType, uid) {
+  const docs = DB.get('documents') || [];
+  DB.set('documents', docs.filter(d => !(d.uid === uid && d.type === docType)));
+  const statusEl = gi('doc-status-'+docType);
+  if (statusEl) { statusEl.textContent = 'Not uploaded'; statusEl.className = 'doc-upload-status'; }
+  toast('Document removed','info');
+}
+
+function submitEmpForm(eid) {
+  const pan = gv('ef-pan').toUpperCase();
+  saveEmp({
+    name:gv('ef-name'), username:gv('ef-user'), password:gv('ef-pw'),
+    email:gv('ef-email'), dept:gv('ef-dept'), position:gv('ef-pos'),
+    phone:gv('ef-phone'), join:gv('ef-join'), managerEmail:gv('ef-mgr'),
+    emergency:gv('ef-emg'), emergencyPhone:gv('ef-emgp'), role:gv('ef-role'),
+    aadhaar:gv('ef-aadhaar'), pan
+  }, eid || null);
 }
 
 // ════════════════════════════════════════════
