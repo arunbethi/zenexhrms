@@ -1893,12 +1893,12 @@ function seed() {
     ['payroll','payslips','expenses','assets','tickets','ticketMsgs','onboarding','polls','recognition','compoffs','shifts','shiftAssignments','salaryConfig'].forEach(k=>{ if(!localStorage.getItem('zp_'+k)) DB.set(k,[]); });
     const yr=new Date().getFullYear();
     if(!DB.get('holidays').length) DB.set('holidays',[
-      {id:'hol1',name:"New Year's Day",date:yr+'-01-01',type:'national'},
-      {id:'hol2',name:'Republic Day',date:yr+'-01-26',type:'national'},
-      {id:'hol3',name:'Independence Day',date:yr+'-08-15',type:'national'},
-      {id:'hol4',name:'Gandhi Jayanti',date:yr+'-10-02',type:'national'},
+      {id:'hol1',name:"New Year's Day",date:yr+'-01-01',type:'public'},
+      {id:'hol2',name:'Republic Day',date:yr+'-01-26',type:'public'},
+      {id:'hol3',name:'Independence Day',date:yr+'-08-15',type:'public'},
+      {id:'hol4',name:'Gandhi Jayanti',date:yr+'-10-02',type:'public'},
       {id:'hol5',name:'Diwali',date:yr+'-10-20',type:'festival'},
-      {id:'hol6',name:'Christmas Day',date:yr+'-12-25',type:'national'},
+      {id:'hol6',name:'Christmas Day',date:yr+'-12-25',type:'public'},
     ]);
     if(!DB.get('shifts').length) dbSet('shifts',[
       {id:'sh1',name:'General',start:'09:00',end:'18:00',days:[1,2,3,4,5]},
@@ -3517,6 +3517,29 @@ function openPostAnn(){
      </div>`,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="postAnn(gv('an-t'),gv('an-b'),gv('an-ty'),gv('an-p'))">Post</button>`);
 }
+function postAnn(title, body, type, priority) {
+  if (!title || !body) return toast('Title and message required', 'error');
+  const ann = { id:'ann_'+Date.now(), title, body, type, priority, by:CU.name, date:td(), readBy:[] };
+  const arr = DB.get('announcements');
+  arr.unshift(ann);
+  dbSet('announcements', arr);
+  lg(CU.id, CU.name, 'POST_ANN', 'Posted: ' + title);
+  closeModal();
+  if (canSendNotif('announcement')) {
+    DB.get('users').filter(u => u.active && u.email).forEach(u => {
+      const _t = renderTemplate('announcement', { employee_name:u.name, title, body, posted_by:CU.name, date:td() });
+      sendEmail([u.email], _t.subject, emailHtml(_t.subject, templateBodyToHtml(_t.body)));
+    });
+  }
+  toast('Announcement posted', 'success');
+  navigate('announcements-admin');
+}
+function deleteAnn(id) {
+  if (!confirm('Delete this announcement?')) return;
+  dbSet('announcements', DB.get('announcements').filter(a => a.id !== id));
+  toast('Deleted', 'info');
+  navigate('announcements-admin');
+}
 
 // ════════════════════════════════════════════
 // PAGE: DOCUMENTS (Admin)
@@ -4396,7 +4419,7 @@ function pgHolidays(){
   const rows=hols.map(h=>{
     const dt2=new Date(h.date+'T12:00:00'); const past=dt2<new Date();
     return`<tr style="${past?'opacity:.5':''}"><td><b>${esc(h.name)}</b></td><td>${fdate(h.date)}</td><td>${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt2.getDay()]}</td>
-    <td><span class="badge ${h.type==='national'?'br':'bo'}">${h.type}</span></td>
+    <td><span class="badge ${h.type==='public'?'br':'bo'}">${h.type}</span></td>
     ${CU.role==='admin'?`<td><button class="btn btn-ghost btn-sm" onclick="delHoliday('${h.id}')">Del</button></td>`:''}`;
   });
   html+=tbl(CU.role==='admin'?['Name','Date','Day','Type','']:['Name','Date','Day','Type'],rows,'No holidays for this month');
@@ -4406,12 +4429,12 @@ function openAddHoliday(){
   openFormDrawer('Add Holiday',
     `<div class="fg"><label>Holiday Name</label><input id="hol-n" placeholder="e.g. Diwali"></div>
      <div class="fg"><label>Date</label><input type="date" id="hol-d"></div>
-     <div class="fg"><label>Type</label><select id="hol-t"><option value="national">National</option><option value="festival">Festival</option><option value="optional">Optional</option></select></div>`,
+     <div class="fg"><label>Type</label><select id="hol-t"><option value="public">Public</option><option value="festival">Festival</option><option value="optional">Optional</option></select></div>`,
     `<button class="btn btn-ghost" onclick="closeFormDrawer()">Cancel</button><button class="btn btn-primary" onclick="doAddHoliday()">Add</button>`);
 }
 function doAddHoliday(){
   const n=gv('hol-n'),d=gv('hol-d'); if(!n||!d) return toast('Fill all fields','error');
-  const arr=DB.get('holidays'); arr.push({id:'hol_'+Date.now(),name:n,date:d,type:gv('hol-t')||'national'});
+  const arr=DB.get('holidays'); arr.push({id:'hol_'+Date.now(),name:n,date:d,type:gv('hol-t')||'public'});
   dbSet('holidays',arr); toast('Holiday added','success'); closeFormDrawer(); navigate('holidays');
 }
 function delHoliday(id){
@@ -4470,73 +4493,145 @@ function pgPayroll(){
   const now=new Date(); const selM=gi('pr-month')?gi('pr-month').value:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
   const slips=DB.get('payslips').filter(p=>p.period===selM);
-  let html=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
+  const runDt=gi('pr-rundt')?gi('pr-rundt').value:'';
+  let html=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap">
     <input type="month" id="pr-month" value="${selM}" onchange="pgPayroll()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px">
-    <button class="btn btn-primary" onclick="runPayroll('${selM}')">Run Payroll</button>
+    <input type="datetime-local" id="pr-rundt" value="${runDt}" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 12px;font-family:var(--font);font-size:13px" title="Payroll Run Date & Time (optional, defaults to now)">
+    <button class="btn btn-primary" onclick="runPayrollSelected('${selM}')">▶ Run for Selected</button>
+    <button class="btn btn-ghost" onclick="runPayroll('${selM}')">▶ Run All</button>
     <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips generated</span>
   </div>`;
-  if(!slips.length){
-    // Show salary config
-    html+=`<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Salary Configuration</span><button class="btn btn-ghost btn-sm" onclick="navigate('payroll')">Configure</button></div><div class="card-body"><p style="font-size:13px;color:var(--text-3)">Configure salary structures before running payroll.</p></div></div>`;
-  }
   const rows=users.map(u=>{
     const slip=slips.find(s=>s.uid===u.id);
     const cfg=DB.get('salaryConfig').find(s=>s.uid===u.id);
-    return`<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.dept)}</td>
-      <td>${cfg?`₹${cfg.basic.toLocaleString()}`:'-'}</td>
-      <td>${slip?`₹${slip.gross.toLocaleString()}`:'-'}</td>
-      <td>${slip?`₹${slip.deductions.toLocaleString()}`:'-'}</td>
-      <td>${slip?`<b style="color:#10B981">₹${slip.net.toLocaleString()}</b>`:'-'}</td>
+    const cur=cfg?cfg.currency||'INR':'INR';
+    return`<tr><td style="width:36px"><input type="checkbox" class="pr-sel" value="${u.id}" checked></td>
+      <td><b>${esc(u.name)}</b></td><td>${esc(u.dept)}</td>
+      <td>${cfg?fmtAmt(cfg.basic,cur):'-'}</td>
+      <td>${slip?fmtAmt(slip.gross,slip.currency||cur):'-'}</td>
+      <td>${slip?fmtAmt(slip.deductions,slip.currency||cur):'-'}</td>
+      <td>${slip?`<b style="color:#10B981">${fmtAmt(slip.net,slip.currency||cur)}</b>`:'-'}</td>
+      <td>${slip&&slip.runAt?`<span style="font-size:11px;color:var(--text-3)">${new Date(slip.runAt).toLocaleString()}</span>`:''}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="openSalaryConfig('${u.id}','${esc(u.name)}')">Salary</button>${slip?` <button class="btn btn-ghost btn-sm" onclick="viewPayslip('${slip.id}')">Slip</button>`:''}</td></tr>`;
   });
-  html+=tbl(['Employee','Dept','Basic','Gross','Deductions','Net Pay',''],rows,'No employees');
+  html+=`<div style="margin-bottom:8px"><label style="font-size:12px;cursor:pointer"><input type="checkbox" id="pr-sel-all" checked onchange="document.querySelectorAll('.pr-sel').forEach(c=>c.checked=this.checked)"> Select All</label></div>`;
+  html+=tbl(['','Employee','Dept','Basic','Gross','Deductions','Net Pay','Run At',''],rows,'No employees');
   gi('page-body').innerHTML=html;
 }
-function openSalaryConfig(uid,uname){
-  const cfg=DB.get('salaryConfig').find(s=>s.uid===uid)||{basic:30000,hra:12000,ta:2000,allowances:5000,pf:true};
-  modal(`<h3>Salary Config — ${esc(uname)}</h3>`,
-    `<div class="grid-2">
-      <div class="fg"><label>Basic Salary (₹/mo)</label><input type="number" id="sc-b" value="${cfg.basic}"></div>
-      <div class="fg"><label>HRA (₹/mo)</label><input type="number" id="sc-h" value="${cfg.hra}"></div>
-      <div class="fg"><label>Transport Allowance</label><input type="number" id="sc-ta" value="${cfg.ta}"></div>
-      <div class="fg"><label>Other Allowances</label><input type="number" id="sc-a" value="${cfg.allowances}"></div>
+function runPayrollSelected(period){
+  const checks=[...document.querySelectorAll('.pr-sel:checked')];
+  if(!checks.length) return toast('No employees selected','error');
+  const uids=checks.map(c=>c.value);
+  runPayroll(period,uids);
+}
+function openSalaryDrawer(uid,uname){
+  const cfg=DB.get('salaryConfig').find(s=>s.uid===uid)||{uid,currency:'INR',basic:30000,hra:12000,hraFormula:'',ta:2000,taFormula:'',customEarnings:[],customDeductions:[],pf:true};
+  const ce=(cfg.customEarnings||[]).map((e,i)=>`<div class="grid-2" id="ce-row-${i}" style="margin-bottom:6px"><div class="fg" style="margin:0"><input placeholder="Label (e.g. Bonus)" value="${esc(e.label)}" onchange="window._ceRows[${i}].label=this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"></div><div style="display:flex;gap:6px;align-items:center"><input type="number" placeholder="Amount" value="${e.amount}" onchange="window._ceRows[${i}].amount=+this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"><button onclick="removeCERow(${i})" style="border:none;background:none;color:#1E293B;cursor:pointer;font-size:16px;flex-shrink:0">✕</button></div></div>`).join('');
+  const cd=(cfg.customDeductions||[]).map((d,i)=>`<div class="grid-2" id="cd-row-${i}" style="margin-bottom:6px"><div class="fg" style="margin:0"><input placeholder="Label (e.g. Loan EMI)" value="${esc(d.label)}" onchange="window._cdRows[${i}].label=this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"></div><div style="display:flex;gap:6px;align-items:center"><input type="number" placeholder="Amount" value="${d.amount}" onchange="window._cdRows[${i}].amount=+this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"><button onclick="removeCDRow(${i})" style="border:none;background:none;color:#1E293B;cursor:pointer;font-size:16px;flex-shrink:0">✕</button></div></div>`).join('');
+  window._scUID=uid; window._ceRows=[...(cfg.customEarnings||[])]; window._cdRows=[...(cfg.customDeductions||[])];
+  const body=`
+    <div class="form-section"><div class="form-section-title">Currency</div>
+      <div class="fg"><select id="sc-cur" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%">${currencyOpts(cfg.currency||'INR')}</select></div>
     </div>
-    <div class="toggle-row" style="margin-top:10px"><input type="checkbox" id="sc-pf" ${cfg.pf?'checked':''}><label for="sc-pf">Deduct PF (12% of Basic)</label></div>`,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveSalaryConfig('${uid}')">Save</button>`);
+    <div class="form-section"><div class="form-section-title">Fixed Earnings</div>
+      <div class="grid-2">
+        <div class="fg"><label>Basic Salary</label><input type="number" id="sc-b" value="${cfg.basic||0}"></div>
+        <div class="fg"><label>HRA (or formula)</label><input id="sc-h" placeholder="e.g. 12000 or basic*0.4" value="${cfg.hraFormula||cfg.hra||0}"></div>
+        <div class="fg"><label>Transport Allowance (or formula)</label><input id="sc-ta" placeholder="e.g. 2000 or basic*0.1" value="${cfg.taFormula||cfg.ta||0}"></div>
+      </div>
+    </div>
+    <div class="form-section"><div class="form-section-title">Custom Earnings</div>
+      <div id="ce-container">${ce}</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addCERow()">+ Add Earning</button>
+    </div>
+    <div class="form-section"><div class="form-section-title">Custom Deductions</div>
+      <div id="cd-container">${cd}</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addCDRow()">+ Add Deduction</button>
+    </div>
+    <div class="form-section"><div class="form-section-title">Statutory</div>
+      <div class="toggle-row"><input type="checkbox" id="sc-pf" ${cfg.pf?'checked':''}><label for="sc-pf">Deduct Provident Fund (12% of Basic, max ₹1800)</label></div>
+    </div>`;
+  openFormDrawer('Salary Config — '+esc(uname), body,
+    `<button class="btn btn-ghost" onclick="closeFormDrawer()">Cancel</button><button class="btn btn-primary" onclick="saveSalaryConfig()">Save</button>`);
 }
-function saveSalaryConfig(uid){
+function addCERow(){
+  const i=window._ceRows.length; window._ceRows.push({label:'',amount:0});
+  const row=document.createElement('div'); row.id='ce-row-'+i; row.className='grid-2'; row.style.marginBottom='6px';
+  row.innerHTML=`<div class="fg" style="margin:0"><input placeholder="Label" onchange="window._ceRows[${i}].label=this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"></div><div style="display:flex;gap:6px;align-items:center"><input type="number" placeholder="Amount" onchange="window._ceRows[${i}].amount=+this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"><button onclick="removeCERow(${i})" style="border:none;background:none;color:#1E293B;cursor:pointer;font-size:16px;flex-shrink:0">✕</button></div>`;
+  gi('ce-container').appendChild(row);
+}
+function removeCERow(i){ window._ceRows[i]=null; const el=gi('ce-row-'+i); if(el) el.remove(); }
+function addCDRow(){
+  const i=window._cdRows.length; window._cdRows.push({label:'',amount:0});
+  const row=document.createElement('div'); row.id='cd-row-'+i; row.className='grid-2'; row.style.marginBottom='6px';
+  row.innerHTML=`<div class="fg" style="margin:0"><input placeholder="Label" onchange="window._cdRows[${i}].label=this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"></div><div style="display:flex;gap:6px;align-items:center"><input type="number" placeholder="Amount" onchange="window._cdRows[${i}].amount=+this.value" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);font-size:13px;width:100%"><button onclick="removeCDRow(${i})" style="border:none;background:none;color:#1E293B;cursor:pointer;font-size:16px;flex-shrink:0">✕</button></div>`;
+  gi('cd-container').appendChild(row);
+}
+function removeCDRow(i){ window._cdRows[i]=null; const el=gi('cd-row-'+i); if(el) el.remove(); }
+function saveSalaryConfig(){
+  const uid=window._scUID; if(!uid) return;
+  const hraRaw=gv('sc-h'); const taRaw=gv('sc-ta');
+  const basic=+gv('sc-b')||0;
+  const isHraFormula=isNaN(Number(hraRaw)); const isTaFormula=isNaN(Number(taRaw));
+  const hra=isHraFormula?evalFormula(hraRaw,basic,0,0):+hraRaw||0;
+  const ta=isTaFormula?evalFormula(taRaw,basic,hra,0):+taRaw||0;
+  const customEarnings=(window._ceRows||[]).filter(Boolean).filter(e=>e.label);
+  const customDeductions=(window._cdRows||[]).filter(Boolean).filter(d=>d.label);
+  const rec={uid,currency:gv('sc-cur')||'INR',basic,hra,hraFormula:isHraFormula?hraRaw:'',ta,taFormula:isTaFormula?taRaw:'',customEarnings,customDeductions,pf:!!gi('sc-pf')?.checked};
   const arr=DB.get('salaryConfig').filter(s=>s.uid!==uid);
-  arr.push({uid,basic:+gv('sc-b')||0,hra:+gv('sc-h')||0,ta:+gv('sc-ta')||0,allowances:+gv('sc-a')||0,pf:!!gi('sc-pf')?.checked});
-  dbSet('salaryConfig',arr); toast('Salary saved','success'); closeModal(); navigate('payroll');
+  arr.push(rec); dbSet('salaryConfig',arr);
+  toast('Salary configuration saved','success'); closeFormDrawer(); navigate('payroll');
 }
-function runPayroll(period){
-  if(!confirm(`Run payroll for ${period}? Existing slips will be overwritten.`)) return;
+// Legacy alias
+function openSalaryConfig(uid,uname){ openSalaryDrawer(uid,uname); }
+function runPayroll(period, selectedUIDs){
+  const isSelective=selectedUIDs&&selectedUIDs.length>0;
+  const label=isSelective?`${selectedUIDs.length} selected employee(s)`:'all active employees';
+  if(!confirm(`Run payroll for ${period} — ${label}? Existing slips for these employees will be overwritten.`)) return;
   const [yr,mo]=period.split('-').map(Number);
-  const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
-  const existing=DB.get('payslips').filter(p=>p.period!==period);
+  const allUsers=DB.get('users').filter(u=>u.role==='employee'&&u.active);
+  const users=isSelective?allUsers.filter(u=>selectedUIDs.includes(u.id)):allUsers;
+  const runDtInput=gi('pr-rundt')?gi('pr-rundt').value:'';
+  const runAt=runDtInput?new Date(runDtInput).toISOString():new Date().toISOString();
+  // Keep slips for other periods AND for employees NOT in this run
+  const existing=DB.get('payslips').filter(p=>p.period!==period||(isSelective&&!selectedUIDs.includes(p.uid)));
   const newSlips=[...existing];
+  const addedSlips=[];
   users.forEach(u=>{
-    const cfg=DB.get('salaryConfig').find(s=>s.uid===u.id)||{basic:25000,hra:10000,ta:1600,allowances:3000,pf:true};
-    const gross=cfg.basic+cfg.hra+cfg.ta+cfg.allowances;
-    const pf=cfg.pf?Math.min(1800,Math.round(cfg.basic*0.12)):0;
+    const cfg=DB.get('salaryConfig').find(s=>s.uid===u.id)||{basic:25000,hra:10000,ta:1600,currency:'INR',customEarnings:[],customDeductions:[],pf:true};
+    const basic=cfg.basic||0;
+    const hraFormula=cfg.hraFormula||'';
+    const taFormula=cfg.taFormula||'';
+    const hra=hraFormula?evalFormula(hraFormula,basic,0,0):(cfg.hra||0);
+    const ta=taFormula?evalFormula(taFormula,basic,hra,0):(cfg.ta||0);
+    const customEarnings=(cfg.customEarnings||[]).filter(e=>e.label&&e.amount);
+    const customDeductions=(cfg.customDeductions||[]).filter(d=>d.label&&d.amount);
+    const ceTotal=customEarnings.reduce((s,e)=>s+(+e.amount||0),0);
+    const cdTotal=customDeductions.reduce((s,d)=>s+(+d.amount||0),0);
+    const gross=basic+hra+ta+ceTotal;
+    const pf=cfg.pf?Math.min(1800,Math.round(basic*0.12)):0;
     const pt=gross>25000?200:gross>15000?150:gross>10000?100:0;
     const tax=Math.round(calcTax(gross*12)/12);
-    const deductions=pf+pt+tax;
+    const deductions=pf+pt+tax+cdTotal;
     const net=gross-deductions;
-    newSlips.push({id:'slip_'+u.id+'_'+period,uid:u.id,uname:u.name,dept:u.dept,period,month:mo,year:yr,basic:cfg.basic,hra:cfg.hra,ta:cfg.ta,allowances:cfg.allowances,gross,pf,pt,tax,deductions,net,generatedBy:CU.name,generatedOn:td()});
+    const slip={id:'slip_'+u.id+'_'+period,uid:u.id,uname:u.name,dept:u.dept,period,month:mo,year:yr,
+      currency:cfg.currency||'INR',basic,hra,ta,customEarnings,customDeductions,
+      ceTotal,cdTotal,gross,pf,pt,tax,deductions,net,
+      runAt,generatedBy:CU.name,generatedOn:td()};
+    newSlips.push(slip); addedSlips.push(slip);
   });
   dbSet('payslips',newSlips);
-  toast(`Payroll run — ${users.length} payslips generated`,'success');
-  // Send payslip notification emails to all employees
+  toast(`Payroll run — ${addedSlips.length} payslip${addedSlips.length!==1?'s':''} generated`,'success');
   if(canSendNotif('payslip')){
-    newSlips.filter(s=>s.period===period).forEach(slip=>{
-      const emp=users.find(u=>u.id===slip.uid);
+    addedSlips.forEach(slip=>{
+      const emp=allUsers.find(u=>u.id===slip.uid);
       const empEmail=emp?(emp.email||emp.workEmail||''):'';
       if(!empEmail) return;
+      const sym=getCurrSymbol(slip.currency);
       const _t=renderTemplate('payslip',{
         employee_name:slip.uname, period:slip.period,
-        gross:'₹'+slip.gross.toLocaleString(), deductions:'₹'+slip.deductions.toLocaleString(),
-        net:'₹'+slip.net.toLocaleString(), processed_by:CU.name
+        gross:sym+slip.gross.toLocaleString(), deductions:sym+slip.deductions.toLocaleString(),
+        net:sym+slip.net.toLocaleString(), processed_by:CU.name
       });
       sendEmail([empEmail],_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
     });
@@ -4555,16 +4650,25 @@ function pgPayslipsAdmin(){
     <select id="pa-dept" onchange="pgPayslipsAdmin()" style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:6px 28px 6px 12px;font-family:var(--font);font-size:13px">
       <option value="">All Departments</option>${depts.map(d=>`<option value="${d}" ${selDept===d?'selected':''}>${d}</option>`).join('')}
     </select>
-    <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips · Total net: <b style="color:#10B981">₹${totalNet.toLocaleString()}</b></span>
+    <span style="font-size:12px;color:var(--text-3)">${slips.length} payslips · Total net: <b style="color:#10B981">${totalNet.toLocaleString()}</b></span>
     ${slips.length?`<button class="btn btn-ghost btn-sm" onclick="exportPayrollCSV('${selM}')">Export CSV</button>`:''}
   </div>`;
-  const rows=slips.map(s=>`<tr><td><b>${esc(s.uname)}</b></td><td>${esc(s.dept)}</td><td>₹${s.basic.toLocaleString()}</td><td>₹${s.gross.toLocaleString()}</td><td style="color:#1E293B">- ₹${s.deductions.toLocaleString()}</td><td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td><td><button class="btn btn-primary btn-sm" onclick="viewPayslip('${s.id}')">View</button></td></tr>`);
+  const rows=slips.map(s=>{const cur=s.currency||'INR';return`<tr><td><b>${esc(s.uname)}</b></td><td>${esc(s.dept)}</td><td>${fmtAmt(s.basic,cur)}</td><td>${fmtAmt(s.gross,cur)}</td><td style="color:#1E293B">- ${fmtAmt(s.deductions,cur)}</td><td><b style="color:#10B981">${fmtAmt(s.net,cur)}</b></td><td><button class="btn btn-primary btn-sm" onclick="viewPayslip('${s.id}')">View</button></td></tr>`});
   html+=tbl(['Employee','Dept','Basic','Gross','Deductions','Net Pay',''],rows,'No payslips for this month. Go to Payroll and click "Run Payroll".');
   gi('page-body').innerHTML=html;
 }
 function exportPayrollCSV(period){
   const slips=DB.get('payslips').filter(p=>p.period===period);
-  exportCSV(slips.map(s=>[s.uname,s.dept,s.period,s.basic,s.hra,s.ta,s.allowances,s.gross,s.pf,s.pt,s.tax,s.deductions,s.net]),['Name','Dept','Period','Basic','HRA','TA','Allowances','Gross','PF','Prof Tax','Income Tax','Total Deductions','Net Pay'],'payroll_'+period+'.csv');
+  // Gather all unique custom earning/deduction labels across all slips
+  const ceLabels=[...new Set(slips.flatMap(s=>(s.customEarnings||[]).map(e=>e.label)))];
+  const cdLabels=[...new Set(slips.flatMap(s=>(s.customDeductions||[]).map(d=>d.label)))];
+  const headers=['Name','Dept','Period','Currency','Basic','HRA','TA',...ceLabels,'Gross','PF','Prof Tax','Income Tax',...cdLabels,'Total Deductions','Net Pay','Run At'];
+  const rows=slips.map(s=>{
+    const ceVals=ceLabels.map(l=>{const e=(s.customEarnings||[]).find(x=>x.label===l);return e?e.amount:0;});
+    const cdVals=cdLabels.map(l=>{const d=(s.customDeductions||[]).find(x=>x.label===l);return d?d.amount:0;});
+    return[s.uname,s.dept,s.period,s.currency||'INR',s.basic,s.hra,s.ta,...ceVals,s.gross,s.pf,s.pt,s.tax,...cdVals,s.deductions,s.net,s.runAt||s.generatedOn||''];
+  });
+  exportCSV(rows,headers,'payroll_'+period+'.csv');
 }
 function pgMyPayslips(){
   const allSlips=DB.get('payslips').filter(p=>p.uid===CU.id).sort((a,b)=>b.period.localeCompare(a.period));
@@ -4580,40 +4684,49 @@ function pgMyPayslips(){
     </select>
     ${slips.length?`<span style="font-size:12px;color:var(--text-3)">${slips.length} payslip${slips.length!==1?'s':''} · Total net: <b style="color:#10B981">₹${totalNet.toLocaleString()}</b></span>`:''}
   </div>`;
-  const rows=slips.map(s=>`<tr>
+  const rows=slips.map(s=>{const cur=s.currency||'INR';return`<tr>
     <td><b>${s.period}</b></td>
-    <td>₹${s.gross.toLocaleString()}</td>
-    <td style="color:#1E293B">- ₹${s.deductions.toLocaleString()}</td>
-    <td><b style="color:#10B981">₹${s.net.toLocaleString()}</b></td>
+    <td>${fmtAmt(s.gross,cur)}</td>
+    <td style="color:#1E293B">- ${fmtAmt(s.deductions,cur)}</td>
+    <td><b style="color:#10B981">${fmtAmt(s.net,cur)}</b></td>
     <td><button class="btn btn-primary btn-sm" onclick="viewPayslip('${s.id}')">View & Download</button></td>
-  </tr>`);
+  </tr>`});
   html+=tbl(['Period','Gross','Deductions','Net Pay',''],rows,'No payslips yet. Ask admin to run payroll for your account.');
   gi('page-body').innerHTML=html;
 }
 function viewPayslip(id){
   const s=DB.get('payslips').find(x=>x.id===id); if(!s) return;
-  const u=DB.get('users').find(x=>x.id===s.uid);
+  const cur=s.currency||'INR'; const sym=getCurrSymbol(cur);
+  const fmt=n=>`${sym}${(n||0).toLocaleString()}`;
+  const ceRows=(s.customEarnings||[]).map(e=>`<tr><td class="label">${esc(e.label)}</td><td>${fmt(e.amount)}</td></tr>`).join('');
+  const cdRows=(s.customDeductions||[]).map(d=>`<tr><td class="label">${esc(d.label)}</td><td>${fmt(d.amount)}</td></tr>`).join('');
+  const runAtStr=s.runAt?`<div style="color:#94A3B8;font-size:12px">Run: ${new Date(s.runAt).toLocaleString()}</div>`:'';
   const w=window.open('','_blank'); if(!w)return;
   w.document.write(`<!DOCTYPE html><html><head><title>Payslip ${s.period}</title>
   <style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#1a1a1a}h1{font-size:22px;margin:0}.top{background:#1E293B;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center}.mid{padding:20px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none}.bottom{border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:0 24px 16px}table{width:100%;border-collapse:collapse;font-size:13px}tr{border-bottom:1px solid #f0f0f0}td{padding:7px 8px}.label{color:#64748B;width:180px}.val{font-weight:600}.total{background:#f0f9ff}.net{background:#0F172A;color:#fff}.net td{padding:12px 8px}.btn{background:#1E293B;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;margin-top:16px}@media print{.btn{display:none}}</style>
   </head><body>
-  <div class="top"><div><h1>Zenex Partners</h1><div style="color:#94A3B8;font-size:13px">Payslip — ${s.period}</div></div><div style="text-align:right;font-size:13px">${s.generatedOn}</div></div>
+  <div class="top"><div><h1>Zenex Partners</h1><div style="color:#94A3B8;font-size:13px">Payslip — ${s.period} &nbsp;·&nbsp; ${cur}</div></div><div style="text-align:right;font-size:13px">${s.generatedOn||''}${runAtStr}</div></div>
   <div class="mid"><table><tr><td class="label">Employee Name</td><td class="val">${esc(s.uname)}</td><td class="label">Department</td><td class="val">${esc(s.dept)}</td></tr>
   <tr><td class="label">Employee ID</td><td class="val">${esc(s.uid)}</td><td class="label">Pay Period</td><td class="val">${s.period}</td></tr></table></div>
   <div class="bottom">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
   <div><h3 style="font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;color:#64748B">Earnings</h3>
-  <table><tr><td class="label">Basic Salary</td><td>₹${s.basic.toLocaleString()}</td></tr>
-  <tr><td class="label">HRA</td><td>₹${s.hra.toLocaleString()}</td></tr>
-  <tr><td class="label">Transport Allowance</td><td>₹${s.ta.toLocaleString()}</td></tr>
-  <tr><td class="label">Other Allowances</td><td>₹${s.allowances.toLocaleString()}</td></tr>
-  <tr class="total"><td class="label"><b>Gross Pay</b></td><td><b>₹${s.gross.toLocaleString()}</b></td></tr></table></div>
+  <table>
+    <tr><td class="label">Basic Salary</td><td>${fmt(s.basic)}</td></tr>
+    <tr><td class="label">HRA</td><td>${fmt(s.hra)}</td></tr>
+    <tr><td class="label">Transport Allowance</td><td>${fmt(s.ta)}</td></tr>
+    ${ceRows}
+    <tr class="total"><td class="label"><b>Gross Pay</b></td><td><b>${fmt(s.gross)}</b></td></tr>
+  </table></div>
   <div><h3 style="font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;color:#64748B">Deductions</h3>
-  <table><tr><td class="label">Provident Fund</td><td>₹${s.pf.toLocaleString()}</td></tr>
-  <tr><td class="label">Professional Tax</td><td>₹${s.pt.toLocaleString()}</td></tr>
-  <tr><td class="label">Income Tax</td><td>₹${s.tax.toLocaleString()}</td></tr>
-  <tr class="total"><td class="label"><b>Total Deductions</b></td><td><b>₹${s.deductions.toLocaleString()}</b></td></tr></table></div></div>
-  <table style="margin-top:16px"><tr class="net"><td class="label" style="color:#94A3B8">Net Pay</td><td style="font-size:20px;font-weight:800;color:#4ADE80">₹${s.net.toLocaleString()}</td></tr></table>
+  <table>
+    <tr><td class="label">Provident Fund</td><td>${fmt(s.pf)}</td></tr>
+    <tr><td class="label">Professional Tax</td><td>${fmt(s.pt)}</td></tr>
+    <tr><td class="label">Income Tax</td><td>${fmt(s.tax)}</td></tr>
+    ${cdRows}
+    <tr class="total"><td class="label"><b>Total Deductions</b></td><td><b>${fmt(s.deductions)}</b></td></tr>
+  </table></div></div>
+  <table style="margin-top:16px"><tr class="net"><td class="label" style="color:#94A3B8">Net Pay (${cur})</td><td style="font-size:20px;font-weight:800;color:#4ADE80">${fmt(s.net)}</td></tr></table>
   <button class="btn" onclick="window.print()">🖨️ Print / Download PDF</button></div></body></html>`);
   w.document.close();
 }
@@ -4906,6 +5019,46 @@ function submitRecognition(){
   }
   toast('Recognition sent!','success'); closeFormDrawer();
   navigate(CU.role==='admin'?'recognition-admin':'recognition');
+}
+
+
+// ════════════════════════════════════════════
+// CURRENCY SUPPORT
+// ════════════════════════════════════════════
+const CURRENCIES = [
+  {code:'INR',symbol:'₹',name:'Indian Rupee'},{code:'USD',symbol:'$',name:'US Dollar'},
+  {code:'EUR',symbol:'€',name:'Euro'},{code:'GBP',symbol:'£',name:'British Pound'},
+  {code:'AED',symbol:'د.إ',name:'UAE Dirham'},{code:'SAR',symbol:'﷼',name:'Saudi Riyal'},
+  {code:'SGD',symbol:'S$',name:'Singapore Dollar'},{code:'AUD',symbol:'A$',name:'Australian Dollar'},
+  {code:'CAD',symbol:'C$',name:'Canadian Dollar'},{code:'CHF',symbol:'Fr',name:'Swiss Franc'},
+  {code:'JPY',symbol:'¥',name:'Japanese Yen'},{code:'CNY',symbol:'¥',name:'Chinese Yuan'},
+  {code:'MYR',symbol:'RM',name:'Malaysian Ringgit'},{code:'PHP',symbol:'₱',name:'Philippine Peso'},
+  {code:'IDR',symbol:'Rp',name:'Indonesian Rupiah'},{code:'THB',symbol:'฿',name:'Thai Baht'},
+  {code:'VND',symbol:'₫',name:'Vietnamese Dong'},{code:'KRW',symbol:'₩',name:'South Korean Won'},
+  {code:'BRL',symbol:'R$',name:'Brazilian Real'},{code:'MXN',symbol:'$',name:'Mexican Peso'},
+  {code:'ZAR',symbol:'R',name:'South African Rand'},{code:'NGN',symbol:'₦',name:'Nigerian Naira'},
+  {code:'KES',symbol:'KSh',name:'Kenyan Shilling'},{code:'EGP',symbol:'£',name:'Egyptian Pound'},
+  {code:'PKR',symbol:'₨',name:'Pakistani Rupee'},{code:'BDT',symbol:'৳',name:'Bangladeshi Taka'},
+  {code:'LKR',symbol:'₨',name:'Sri Lankan Rupee'},{code:'NPR',symbol:'₨',name:'Nepalese Rupee'},
+  {code:'QAR',symbol:'ر.ق',name:'Qatari Riyal'},{code:'KWD',symbol:'د.ك',name:'Kuwaiti Dinar'},
+  {code:'BHD',symbol:'.د.ب',name:'Bahraini Dinar'},{code:'OMR',symbol:'﷼',name:'Omani Rial'},
+  {code:'HKD',symbol:'HK$',name:'Hong Kong Dollar'},{code:'TWD',symbol:'NT$',name:'Taiwan Dollar'},
+  {code:'NZD',symbol:'NZ$',name:'New Zealand Dollar'},{code:'SEK',symbol:'kr',name:'Swedish Krona'},
+  {code:'NOK',symbol:'kr',name:'Norwegian Krone'},{code:'DKK',symbol:'kr',name:'Danish Krone'},
+  {code:'PLN',symbol:'zł',name:'Polish Zloty'},{code:'TRY',symbol:'₺',name:'Turkish Lira'},
+  {code:'RUB',symbol:'₽',name:'Russian Ruble'},{code:'UAH',symbol:'₴',name:'Ukrainian Hryvnia'},
+];
+function getCurrSymbol(code){ const c=CURRENCIES.find(x=>x.code===(code||'INR')); return c?c.symbol:'₹'; }
+function fmtAmt(amount,currency){ return getCurrSymbol(currency)+(amount||0).toLocaleString(); }
+function currencyOpts(sel){ return CURRENCIES.map(c=>`<option value="${c.code}" ${sel===c.code?'selected':''}>${c.code} — ${c.name} (${c.symbol})</option>`).join(''); }
+function evalFormula(expr, basic, hra, ta){
+  if(!expr||!expr.trim()) return 0;
+  try {
+    const safe=expr.replace(/[^0-9+\-*/().\ ]/g,'');
+    const e2=expr.replace(/\bbasic\b/g,basic).replace(/\bhra\b/g,hra).replace(/\bta\b/g,ta);
+    if(!/^[\d\s+\-*/().\.]+$/.test(e2)) return 0;
+    return Math.round(eval(e2))||0;
+  } catch(e){ return 0; }
 }
 
 // ════════════════════════════════════════════
