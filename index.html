@@ -506,8 +506,7 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 /* Logo: hide full SVG, show Z mark */
 .sb-logo-full { display: flex; align-items: center; min-width: 0; flex: 1; }
       .sidebar.collapsed .sb-logo-full { display: none !important; }
-.sb-logo-z { display: none; flex: 1; font-size: 20px; font-weight: 800; color: var(--primary); }
-.sidebar.collapsed .sb-logo-z { display: flex !important; align-items: center; }
+.sb-logo-z { display: none !important; }
 
 /* User: show only avatar, centered */
 .sidebar.collapsed .sb-user { padding: 10px 0; justify-content: center; }
@@ -918,14 +917,23 @@ body.sb-collapsed .sb-ham { margin-left: 0; }
   .sidebar.mob-open {
     transform: translateX(0);
   }
-  /* Collapsed state ignored on mobile – sidebar is always full width */
-  .sidebar.collapsed { width: 84px !important; }
+  /* Collapsed state IGNORED on mobile — always full width */
+  .sidebar.collapsed,
+  body.sb-collapsed .sidebar { width: 260px !important; }
 
-  .sidebar.collapsed .nav-item    { padding: 9px var(--s4); justify-content: flex-start; gap: 10px; }
+  /* Force full content visible regardless of collapsed state */
+  .sidebar.collapsed .sb-logo-full { display: flex !important; }
+  .sidebar.collapsed .sb-user { padding: var(--s3) var(--s4); justify-content: flex-start; }
+  .sidebar.collapsed .sb-user-text { display: flex !important; }
+  .sidebar.collapsed .nav-group { display: block !important; }
+  .sidebar.collapsed .nav-item { padding: 9px var(--s4); justify-content: flex-start; gap: 10px; }
   .sidebar.collapsed .nav-item svg { width: 18px; height: 18px; margin: 0; }
   .sidebar.collapsed .nav-item span { display: inline !important; }
-  .sidebar.collapsed .sb-user-text { display: flex !important; }
+  .sidebar.collapsed .nav-item:hover::after,
+  .sidebar.collapsed .nav-item:hover::before { display: none !important; }
   .sidebar.collapsed .sb-clock, .sidebar.collapsed .sb-date { display: block !important; }
+  .sidebar.collapsed .sb-footer { padding: var(--s4); align-items: flex-start; }
+  .sidebar.collapsed .sb-logout { width: 100%; justify-content: flex-start; }
   .sidebar.collapsed .sb-logout-text { display: inline !important; }
 
   /* Show topbar hamburger on mobile (to open closed sidebar) */
@@ -1017,6 +1025,7 @@ body.sb-collapsed .sb-ham { margin-left: 0; }
   .lp-tagline { display: none; }
   .lp-features { display: none; }
   .lp-left::before, .lp-left::after { display: none; }
+  .lp-attribution { display: block !important; margin-top: 6px; text-align: center; }
   
     /* ── Login page quote section ── */
     .lp-quote-wrap {
@@ -1392,8 +1401,7 @@ body.sb-collapsed .sb-ham { margin-left: 0; }
         >
         <span style="display:none;font-size:16px;font-weight:800;color:var(--primary)">Zenex</span>
       </div>
-      <!-- Z mark (collapsed) -->
-      <div class="sb-logo-z">Z</div>
+
       <!-- Unified toggle button — always inside the sidebar -->
       <button class="sb-ham" onclick="toggleSidebar()" aria-label="Toggle sidebar">
         <svg class="sb-ham-lines" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
@@ -2770,6 +2778,7 @@ function toggleSidebar() {
 }
 function restoreSidebarState() {
   try {
+    if (window.innerWidth <= 900) return; // never restore collapsed on mobile
     const c = localStorage.getItem('zp_sb_collapsed');
     if (c === '1') {
       gi('sidebar').classList.add('collapsed');
