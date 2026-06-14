@@ -131,6 +131,7 @@ body {
   color: var(--text); margin-bottom: var(--s2); font-family: var(--font);
 }
 .lp-tagline p { font-size: 13px; color: var(--text-2); line-height: 1.65; }
+.lp-attribution { margin-top: auto; font-size: 11px; color: var(--text-3); letter-spacing: 0.02em; padding-top: 12px; }
 .lp-features { display: flex; flex-direction: column; gap: var(--s3); }
 .lp-feat {
   display: flex; align-items: center; gap: var(--s3);
@@ -1268,13 +1269,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
         <div class="lp-feat"><div class="lp-feat-dot"></div>Monthly reports &amp; CSV export</div>
       </div>
 
-      <!-- Motivational Quote -->
-      <div class="lp-quote-wrap">
-        <div class="lp-quote-icon">&ldquo;</div>
-        <p class="lp-quote-text" id="lp-q-text">Loading...</p>
-        <div class="lp-quote-author" id="lp-q-author"></div>
-        <div class="lp-quote-dots" id="lp-q-dots"></div>
-      </div>
+      <!-- Attribution -->
+      <div class="lp-attribution">Designed by Arun Kumar Bethi &nbsp;·&nbsp; Exclusive for Zenex Partners</div>
     </div>
     <!-- Right form panel -->
     <div class="lp-right">
@@ -2378,6 +2374,18 @@ const PAGES = {
 
 let curPage='dashboard';
 
+
+  function syncTopbarProfile() {
+  try {
+    if (!CU) return;
+    const name = CU.name || CU.displayName || 'User';
+    const role = CU.role || 'employee';
+    const initials = name.split(' ').filter(Boolean).map(w=>w[0]).join('').substring(0,2).toUpperCase() || 'U';
+    ['tb-av','tb-pm-av'].forEach(id=>{ const el=gi(id); if(el) el.textContent=initials; });
+    const nm=gi('tb-pm-name'); if(nm) nm.textContent=name;
+    const rl=gi('tb-pm-role'); if(rl) rl.textContent=role==='admin'?'Administrator':role.charAt(0).toUpperCase()+role.slice(1);
+  } catch(e){ console.warn('syncTopbarProfile error:',e); }
+}
 
   function showApp() {
   syncTopbarProfile();
@@ -4393,9 +4401,6 @@ restore();
       localStorage.setItem('zp_login_q', JSON.stringify({ date: today, idx: idx }));
     }
     var q = LP_QUOTES[idx];
-    qText.textContent = q.text;
-    var auth = document.getElementById('lp-q-author');
-    if (auth) auth.textContent = '— ' + q.author;
   }
   function safeInitQuote() { try { initLoginQuote(); } catch(e){ console.warn('Quote init error:', e); } }
   setTimeout(safeInitQuote, 0);
