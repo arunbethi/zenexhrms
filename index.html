@@ -1590,7 +1590,7 @@ const SP = {
   listIds: {},
   GRAPH: 'https://graph.microsoft.com/v1.0',
   SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'],
-  LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs','ZP_Notifications','ZP_EmailTemplates'],
+  LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs','ZP_Notifications','ZP_EmailTemplates','ZP_Documents'],
 
   async token() {
     if (!_msalInstance) return null;
@@ -1695,7 +1695,8 @@ const SP = {
     'ZP_Logs':          [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'Action',text:{}},{name:'Detail',text:{allowMultipleLines:true}},{name:'Timestamp',text:{}}],
     'ZP_Announcements': [{name:'Body',text:{allowMultipleLines:true}},{name:'AuthorName',text:{}},{name:'PostedAt',text:{}}],
     'ZP_Notifications': [{name:'EmployeeID',text:{}},{name:'Message',text:{allowMultipleLines:true}},{name:'NotifType',text:{}},{name:'IsRead',text:{}},{name:'Timestamp',text:{}}],
-    'ZP_EmailTemplates':[{name:'TemplateKey',text:{}},{name:'Subject',text:{}},{name:'Body',text:{allowMultipleLines:true}}]
+    'ZP_EmailTemplates':[{name:'TemplateKey',text:{}},{name:'Subject',text:{}},{name:'Body',text:{allowMultipleLines:true}}],
+    'ZP_Documents':    [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'DocType',text:{}},{name:'DocLabel',text:{}},{name:'FileName',text:{}},{name:'UploadedAt',text:{}}]
   },
 
   // Ensure proper readable columns exist on each list (adds missing ones)
@@ -1723,6 +1724,7 @@ const SP = {
       case 'ZP_Announcements': return { Body:r.msg||'', AuthorName:r.authorName||'', PostedAt:r.ts||'' };
       case 'ZP_Notifications': return { EmployeeID:r.uid||'', Message:r.msg||'', NotifType:r.type||'', IsRead:r.read?'Yes':'No', Timestamp:r.ts||'' };
       case 'ZP_EmailTemplates': return { TemplateKey:r.key||r.id||'', Subject:r.subject||'', Body:r.body||'' };
+      case 'ZP_Documents': { const u2=(DB.get('users')||[]).find(u=>u.id===r.uid); return { EmployeeID:r.uid||'', EmployeeName:u2?u2.name:'', DocType:r.type||'', DocLabel:r.label||'', FileName:r.name||'', UploadedAt:r.uploadedAt||'' }; }
       default: return {};
     }
   },
@@ -1740,7 +1742,7 @@ const SP = {
 };
 
 // DB key → SP list name
-const SP_MAP = { users:'ZP_Users', attendance:'ZP_Attendance', breaks:'ZP_Breaks', leaves:'ZP_Leaves', announcements:'ZP_Announcements', logs:'ZP_Logs', notifications:'ZP_Notifications', email_templates:'ZP_EmailTemplates' };
+const SP_MAP = { users:'ZP_Users', attendance:'ZP_Attendance', breaks:'ZP_Breaks', leaves:'ZP_Leaves', announcements:'ZP_Announcements', logs:'ZP_Logs', notifications:'ZP_Notifications', email_templates:'ZP_EmailTemplates', documents:'ZP_Documents' };
 
 // Write-through: save to localStorage AND push to SP (non-blocking)
 function dbSet(key, value) {
@@ -1748,7 +1750,12 @@ function dbSet(key, value) {
   if (!SP.siteId || !SP_MAP[key]) return;
   const listName = SP_MAP[key];
   const records = Array.isArray(value) ? value : [value];
-  records.forEach(rec => { if (rec && rec.id) SP.upsert(listName, rec).catch(() => {}); });
+  records.forEach(rec => {
+    if (!rec || !rec.id) return;
+    // Strip large base64 data before sending to SP (store metadata only)
+    const spRec = key === 'documents' ? { ...rec, data: undefined } : rec;
+    SP.upsert(listName, spRec).catch(() => {});
+  });
 }
 
 // Remove from SP when deleting a record
@@ -2882,6 +2889,18 @@ function filterEmps(q) {
   gi('emp-tb').innerHTML=empRows(DB.get('users').filter(u=>u.active!==false&&(u.name.toLowerCase().includes(ql)||u.dept.toLowerCase().includes(ql)||u.position.toLowerCase().includes(ql))));
 }
 
+const TIMEZONES = [
+  { value:'America/New_York',    label:'Eastern Time (ET)  —  UTC−5/4',  abbr:'ET'  },
+  { value:'America/Chicago',     label:'Central Time (CT)  —  UTC−6/5',  abbr:'CT'  },
+  { value:'America/Denver',      label:'Mountain Time (MT)  —  UTC−7/6', abbr:'MT'  },
+  { value:'America/Los_Angeles', label:'Pacific Time (PT)  —  UTC−8/7',  abbr:'PT'  },
+  { value:'Asia/Kolkata',        label:'India Standard Time (IST)  —  UTC+5:30', abbr:'IST' },
+  { value:'Asia/Manila',         label:'Philippines Time (PHT)  —  UTC+8',       abbr:'PHT' }
+];
+function tzOptions(selected='') {
+  return TIMEZONES.map(t=>`<option value="${t.value}" ${selected===t.value?'selected':''}>${t.label}</option>`).join('');
+}
+
 const DOC_TYPES = [
   { key:'aadhaar', label:'Aadhaar Card', icon:'🪪' },
   { key:'pan',     label:'PAN Card',     icon:'💳' },
@@ -2929,6 +2948,7 @@ function buildEmpDrawerBody(u) {
 
   const docRows = DOC_TYPES.map(dt => {
     const existing = getDoc(dt.key);
+    const safeUid = (uid||'__new__');
     return `<div class="doc-upload-row">
       <div class="doc-upload-info">
         <div class="doc-upload-icon">${dt.icon}</div>
@@ -2942,9 +2962,10 @@ function buildEmpDrawerBody(u) {
       <label class="btn btn-ghost doc-btn" style="cursor:pointer">
         ${existing ? 'Replace' : 'Upload'}
         <input type="file" accept=".pdf,.jpg,.jpeg,.png" style="display:none"
-          onchange="handleDocUpload(this,'${dt.key}','${dt.label}','${uid||'__new__'}')">
+          data-doctype="${dt.key}" data-doclabel="${dt.label}" data-uid="${safeUid}"
+          onchange="handleDocUpload(this,this.dataset.doctype,this.dataset.doclabel,this.dataset.uid)">
       </label>
-      ${existing ? `<button class="btn btn-danger doc-btn" onclick="removeDoc('${dt.key}','${uid||'__new__'}')">Remove</button>` : ''}
+      ${existing ? `<button class="btn btn-danger doc-btn" onclick="removeDoc('${dt.key}','${safeUid}')">Remove</button>` : ''}
     </div>`;
   }).join('');
 
@@ -2975,6 +2996,7 @@ function buildEmpDrawerBody(u) {
         <div class="fg"><label>Phone</label><input id="ef-phone" type="tel" placeholder="+91 98765 43210" value="${esc(u?u.phone:'')}"></div>
         <div class="fg"><label>Manager Email</label><input id="ef-mgr" type="email" placeholder="manager@zenexpartners.net" value="${esc(u?u.managerEmail:'')}"></div>
       </div>
+      <div class="fg"><label>Time Zone</label><select id="ef-tz"><option value="">— Select time zone —</option>${tzOptions(u?u.tz:'')}</select></div>
     </div>
 
     <div class="form-section">
@@ -3033,7 +3055,7 @@ function submitEmpForm(eid) {
     email:gv('ef-email'), dept:gv('ef-dept'), position:gv('ef-pos'),
     phone:gv('ef-phone'), join:gv('ef-join'), managerEmail:gv('ef-mgr'),
     emergency:gv('ef-emg'), emergencyPhone:gv('ef-emgp'), role:gv('ef-role'),
-    aadhaar:gv('ef-aadhaar'), pan
+    aadhaar:gv('ef-aadhaar'), pan, tz:gv('ef-tz')
   }, eid || null);
 }
 
@@ -4076,7 +4098,7 @@ function pgShifts(){
   html+=`<div class="card"><div class="card-header"><span class="card-title">Shift Definitions</span><button class="btn btn-primary btn-sm" onclick="openAddShift()">+ Add</button></div><div class="card-body" style="padding:0">`;
   if(!shifts.length) html+=`<div class="empty-state">No shifts defined</div>`;
   else html+=`<table style="width:100%;border-collapse:collapse"><thead><tr><th>Name</th><th>Hours</th><th>Days</th><th></th></tr></thead><tbody>`+
-    shifts.map(s=>`<tr><td style="padding:8px 12px"><b>${esc(s.name)}</b></td><td style="padding:8px 12px">${s.start}–${s.end}</td><td style="padding:8px 12px;font-size:11px">${(s.days||[]).map(d=>['','M','T','W','T','F','S','S'][d]).join(' ')}</td><td style="padding:8px 12px"><button class="btn btn-ghost btn-sm" onclick="delShift('${s.id}')">Del</button></td></tr>`).join('')+`</tbody></table>`;
+    shifts.map(s=>`<tr><td style="padding:8px 12px"><b>${esc(s.name)}</b>${s.tz?`<div style='font-size:10px;color:var(--text-3);margin-top:2px'>${TIMEZONES.find(t=>t.value===s.tz)?.abbr||s.tz}</div>`:''}</td><td style="padding:8px 12px">${s.start}–${s.end}</td><td style="padding:8px 12px;font-size:11px">${(s.days||[]).map(d=>['','M','T','W','T','F','S','S'][d]).join(' ')}</td><td style="padding:8px 12px"><button class="btn btn-ghost btn-sm" onclick="delShift('${s.id}')">Del</button></td></tr>`).join('')+`</tbody></table>`;
   html+=`</div></div>`;
   // Assignments
   html+=`<div class="card"><div class="card-header"><span class="card-title">Employee Assignments</span></div><div class="card-body" style="padding:0"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Employee</th><th>Shift</th></tr></thead><tbody>`;
@@ -4089,15 +4111,16 @@ function pgShifts(){
 }
 function openAddShift(){
   modal('<h3>Add Shift</h3>',
-    `<div class="fg"><label>Name</label><input id="sh-n" placeholder="e.g. Night Shift"></div>
-     <div class="grid-2"><div class="fg"><label>Start</label><input type="time" id="sh-s" value="09:00"></div><div class="fg"><label>End</label><input type="time" id="sh-e" value="18:00"></div></div>
+    `<div class="fg"><label>Shift Name</label><input id="sh-n" placeholder="e.g. Night Shift, US Morning"></div>
+     <div class="grid-2"><div class="fg"><label>Start Time</label><input type="time" id="sh-s" value="09:00"></div><div class="fg"><label>End Time</label><input type="time" id="sh-e" value="18:00"></div></div>
+     <div class="fg"><label>Time Zone</label><select id="sh-tz"><option value="">— Select time zone —</option>${tzOptions()}</select></div>
      <div class="fg"><label>Working Days</label><div style="display:flex;gap:8px;margin-top:6px">${['M','T','W','Th','F','Sa','Su'].map((d,i)=>`<label style="display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" id="sd_${i+1}" ${i<5?'checked':''}>${d}</label>`).join('')}</div></div>`,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="doAddShift()">Add</button>`);
 }
 function doAddShift(){
   const n=gv('sh-n'); if(!n) return toast('Enter name','error');
   const days=[1,2,3,4,5,6,7].filter(i=>gi('sd_'+i)?.checked);
-  const arr=DB.get('shifts'); arr.push({id:'sh_'+Date.now(),name:n,start:gv('sh-s'),end:gv('sh-e'),days});
+  const tz=gv('sh-tz'); const arr=DB.get('shifts'); arr.push({id:'sh_'+Date.now(),name:n,start:gv('sh-s'),end:gv('sh-e'),days,tz});
   DB.set('shifts',arr); toast('Shift added','success'); closeModal(); navigate('shifts');
 }
 function delShift(id){if(!confirm('Delete shift?'))return;const arr=DB.get('shifts').filter(s=>s.id!==id);DB.set('shifts',arr);navigate('shifts');}
