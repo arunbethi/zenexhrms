@@ -1496,12 +1496,12 @@ async function msLogin() {
     let result;
     if (accounts.length > 0) {
       try {
-        result = await instance.acquireTokenSilent({ scopes: ['User.Read'], account: accounts[0] });
+        result = await instance.acquireTokenSilent({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'], account: accounts[0] });
       } catch(_) {
-        result = await instance.loginPopup({ scopes: ['User.Read'] });
+        result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'] });
       }
     } else {
-      result = await instance.loginPopup({ scopes: ['User.Read'] });
+      result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'] });
     }
 
     const user = msLoginUser(result.account);
@@ -1572,25 +1572,39 @@ const SP = {
   },
 
   async init() {
-    spMsg('Getting SharePoint site…');
+    spMsg('Connecting to SharePoint…');
     const site = await this.req('GET', '/sites/zenexpartners.sharepoint.com:/sites/HRPortal');
-    if (!site) return false;
+    if (!site) { spMsg('❌ Cannot reach SharePoint site','Check permissions and try again'); return false; }
     this.siteId = site.id;
+    console.log('SP site id:', this.siteId);
 
-    spMsg('Setting up lists…');
+    spMsg('Checking existing lists…');
     const existing = await this.req('GET', `/sites/${this.siteId}/lists?$select=id,name&$top=200`);
     if (existing) existing.value.forEach(l => { this.listIds[l.name] = l.id; });
+    console.log('Existing lists:', Object.keys(this.listIds));
 
-    // Create any missing lists with a RecordData multi-line column
+    // Create any missing lists — two-step: create list, then add column
     for (const name of this.LISTS) {
       if (!this.listIds[name]) {
-        spMsg('Creating list: ' + name);
+        spMsg('Creating list: ' + name + '…');
         const list = await this.req('POST', `/sites/${this.siteId}/lists`, {
           displayName: name,
-          list: { template: 'genericList' },
-          columns: [{ name: 'RecordData', text: { allowMultipleLines: true, maxLength: 65535 } }]
+          list: { template: 'genericList' }
         });
-        if (list) this.listIds[name] = list.id;
+        if (list) {
+          this.listIds[name] = list.id;
+          console.log('Created list:', name, list.id);
+          // Add RecordData column separately
+          await this.req('POST', `/sites/${this.siteId}/lists/${list.id}/columns`, {
+            name: 'RecordData',
+            text: { allowMultipleLines: true }
+          });
+        } else {
+          console.error('Failed to create list:', name);
+          spMsg('⚠️ Failed to create: ' + name, 'Check console for details');
+        }
+      } else {
+        console.log('List exists:', name, this.listIds[name]);
       }
     }
     return true;
