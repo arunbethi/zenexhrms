@@ -1761,6 +1761,9 @@ async function spSync() {
   const freshUsers = await SP.getAll('ZP_Users');
   if (freshUsers && freshUsers.length > 0) DB.set('users', freshUsers);
 
+  // Re-seed demo users into localStorage in case SP didn't have them
+  seed();
+
   spLoading(false);
   toast('Synced with SharePoint ✓','success');
   showAppUI();
@@ -2814,19 +2817,20 @@ function pgEmps() {
     <div class="sec-hdr-actions"><button class="btn btn-ghost btn-sm" onclick="exportEmps()">Export CSV</button><button class="btn btn-primary" onclick="openAddEmp()">+ Add Employee</button></div>
   </div>
   <div class="card"><div class="tbl-wrap">
-  <table><thead><tr><th>Employee</th><th>Username</th><th>Department</th><th>Position</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
-  <tbody id="emp-tb">${empRows(DB.get('users').filter(u=>u.role==='employee'))}</tbody></table></div></div>`;
+  <table><thead><tr><th>Employee</th><th>Username</th><th>Role</th><th>Department</th><th>Position</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="emp-tb">${empRows(DB.get('users').filter(u=>u.active!==false))}</tbody></table></div></div>`;
   gi('page-body').innerHTML=html;
 }
 
 function empRows(users) {
-  if (!users.length) return `<tr><td colspan="7"><div class="empty-state">No employees found</div></td></tr>`;
+  if (!users.length) return `<tr><td colspan="8"><div class="empty-state">No employees found</div></td></tr>`;
   return users.map(u=>`<tr>
     <td><div style="display:flex;align-items:center;gap:10px">
       <div class="avatar" style="width:30px;height:30px;font-size:10px;flex-shrink:0">${ini(u.name)}</div>
       <div><div style="font-weight:600;font-size:13.5px">${esc(u.name)}</div><div style="font-size:11px;color:var(--text-3)">${esc(u.email||'')}</div></div>
     </div></td>
     <td style="font-family:monospace;font-size:13px">${esc(u.username)}</td>
+    <td>${u.role==='admin'?'<span style="font-size:11px;font-weight:600;color:var(--primary);background:var(--primary-light);padding:2px 8px;border-radius:10px">Admin</span>':'<span style="font-size:11px;color:var(--text-3)">Employee</span>'}</td>
     <td>${esc(u.dept)}</td><td>${esc(u.position)}</td><td>${fdate(u.join)}</td>
     <td>${sbadge(u.active?'active':'inactive')}</td>
     <td><button class="btn btn-ghost btn-sm" onclick="openEditEmp('${u.id}')">Edit</button>
@@ -2836,7 +2840,7 @@ function empRows(users) {
 
 function filterEmps(q) {
   const ql=q.toLowerCase();
-  gi('emp-tb').innerHTML=empRows(DB.get('users').filter(u=>u.role==='employee'&&(u.name.toLowerCase().includes(ql)||u.dept.toLowerCase().includes(ql)||u.position.toLowerCase().includes(ql))));
+  gi('emp-tb').innerHTML=empRows(DB.get('users').filter(u=>u.active!==false&&(u.name.toLowerCase().includes(ql)||u.dept.toLowerCase().includes(ql)||u.position.toLowerCase().includes(ql))));
 }
 
 function empForm(u){
