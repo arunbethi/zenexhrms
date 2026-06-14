@@ -5307,6 +5307,18 @@ function togglePoll(pollId) {
 }
 function deletePoll(id){if(!confirm('Delete this poll?'))return;dbSet('polls',DB.get('polls').filter(p=>p.id!==id));navigate('polls-admin');}
 
+
+// ── Auto-restore session on page load ──
+(function() {
+  // Show login page by default; restore() will switch to app if session exists
+  const sid = (function(){ try { return JSON.parse(localStorage.getItem('zp_session')); } catch(_){ return null; } })();
+  if (sid) {
+    // Hide login, show loading spinner immediately to avoid flash
+    const lp = document.getElementById('login-page');
+    if (lp) lp.style.display = 'none';
+    document.addEventListener('DOMContentLoaded', function() { restore(); });
+  }
+})();
 </script>
 </body>
 </html>
