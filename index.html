@@ -2743,6 +2743,8 @@ function showAppUI() {
   gi('sb-role').textContent=CU.role==='admin'?'Administrator':CU.dept;
   gi('sb-av').textContent=ini(CU.name);
   buildNav(); startClock(); syncBell(); restoreSidebarState(); navigate('dashboard');
+  // Check for tomorrow's holiday and send reminder emails (once per day)
+  setTimeout(checkHolidayReminders, 3000);
   if(CU.role==='admin') setTimeout(trySendDailySummary, 2000);
 }
 function trySendDailySummary() {
