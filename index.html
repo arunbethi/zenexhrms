@@ -320,6 +320,45 @@ body {
     .st-toggle input:checked + .st-slider { background:var(--primary); }
     .st-toggle input:checked + .st-slider:before { transform:translateX(18px); }
     
+    
+    /* ── Email template editor ── */
+    .et-tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:18px; }
+    .et-tab {
+      padding:6px 14px; border-radius:20px; font-size:12px; font-weight:500;
+      border:1px solid var(--border); background:var(--surface); color:var(--text-3);
+      cursor:pointer; transition:all .15s; white-space:nowrap;
+    }
+    .et-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .et-tab:hover:not(.active) { background:var(--sidebar-hover); color:var(--text); }
+    .et-panel { display:none; } .et-panel.active { display:block; }
+    .et-ph-wrap { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 14px; }
+    .et-ph {
+      display:inline-flex; align-items:center; gap:4px;
+      background:var(--primary-l); color:var(--primary);
+      border:1px solid rgba(30,41,59,.15); border-radius:6px;
+      padding:3px 10px; font-size:11px; font-weight:600;
+      cursor:pointer; font-family:monospace; transition:background .12s;
+    }
+    .et-ph:hover { background:var(--primary); color:#fff; }
+    .et-preview-btn {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 14px; border-radius:8px; font-size:12px; font-weight:500;
+      background:none; border:1px solid var(--border); color:var(--text-2);
+      cursor:pointer; transition:all .15s; margin-top:10px;
+    }
+    .et-preview-btn:hover { background:var(--sidebar-hover); color:var(--text); }
+    .et-preview-box {
+      margin-top:14px; border:1px solid var(--border); border-radius:10px;
+      overflow:hidden; display:none;
+    }
+    .et-preview-box.open { display:block; }
+    .et-preview-frame {
+      width:100%; min-height:300px; border:none;
+      background:#f8fafc;
+    }
+    .et-reset { font-size:11px; color:var(--text-3); cursor:pointer; text-decoration:underline; margin-left:auto; }
+    .et-reset:hover { color:var(--primary); }
+    
     .lp-right {
   flex: 1;
   background: var(--surface);
@@ -1131,6 +1170,45 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
     .st-toggle input:checked + .st-slider { background:var(--primary); }
     .st-toggle input:checked + .st-slider:before { transform:translateX(18px); }
     
+    
+    /* ── Email template editor ── */
+    .et-tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:18px; }
+    .et-tab {
+      padding:6px 14px; border-radius:20px; font-size:12px; font-weight:500;
+      border:1px solid var(--border); background:var(--surface); color:var(--text-3);
+      cursor:pointer; transition:all .15s; white-space:nowrap;
+    }
+    .et-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .et-tab:hover:not(.active) { background:var(--sidebar-hover); color:var(--text); }
+    .et-panel { display:none; } .et-panel.active { display:block; }
+    .et-ph-wrap { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 14px; }
+    .et-ph {
+      display:inline-flex; align-items:center; gap:4px;
+      background:var(--primary-l); color:var(--primary);
+      border:1px solid rgba(30,41,59,.15); border-radius:6px;
+      padding:3px 10px; font-size:11px; font-weight:600;
+      cursor:pointer; font-family:monospace; transition:background .12s;
+    }
+    .et-ph:hover { background:var(--primary); color:#fff; }
+    .et-preview-btn {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 14px; border-radius:8px; font-size:12px; font-weight:500;
+      background:none; border:1px solid var(--border); color:var(--text-2);
+      cursor:pointer; transition:all .15s; margin-top:10px;
+    }
+    .et-preview-btn:hover { background:var(--sidebar-hover); color:var(--text); }
+    .et-preview-box {
+      margin-top:14px; border:1px solid var(--border); border-radius:10px;
+      overflow:hidden; display:none;
+    }
+    .et-preview-box.open { display:block; }
+    .et-preview-frame {
+      width:100%; min-height:300px; border:none;
+      background:#f8fafc;
+    }
+    .et-reset { font-size:11px; color:var(--text-3); cursor:pointer; text-decoration:underline; margin-left:auto; }
+    .et-reset:hover { color:var(--primary); }
+    
     .lp-right { padding: var(--s5); border-radius: 0 0 16px 16px; }
   .lp-right .headline { font-size: 18px; margin-bottom: var(--s1); }
 
@@ -1702,33 +1780,10 @@ function clockIn(wfh) {
   // Notify manager
   if(mgrEmail){
     const s=DB.one('settings')||{};
-    if(canSendNotif('clockIn')){sendEmail(buildToList([mgrEmail],getAdminEmails()),emailHtml('Employee Clock-In',
-      `<p><b>${CU.name}</b> has clocked in.</p>
-       <table style="width:100%;border-collapse:collapse;font-size:13px">
-         <tr><td style="padding:6px 0;color:#64748B;width:120px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Clock-In Time</td><td style="font-weight:700;color:#10B981">${f12(now)}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Mode</td><td>${wfh?'🏠 Work From Home':'🏢 Office'}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Office Start</td><td>${s.officeStart||'09:00'}</td></tr>
-       </table>`))};
-  }
-  navigate('dashboard');
-}
-
-function clockOut() {
-  const arr=DB.get('attendance');
-  const i=arr.findIndex(r=>r.uid===CU.id&&r.date===td());
-  if (i<0) return toast('You have not clocked in today','error');
-  if (arr[i].out) return toast('Already clocked out','error');
-  const now=new Date();
-  arr[i].out=ft(now);
-  const ms=tms(arr[i].out)-tms(arr[i].in)-totalBrkMin(arr[i].id)*60000;
-  const h=Math.max(0,ms/3600000);
-  arr[i].hours=h.toFixed(2);
-  arr[i].overtime=h>8?Math.max(0,h-8).toFixed(2):null;
-  dbSet('attendance',arr);
-  const ot=arr[i].overtime?` | OT: +${arr[i].overtime}h`:'';
+    if(canSendNotif('clockIn')){
+    const _t=renderTemplate('clockIn',{employee_name:CU.name,department:CU.dept,date:td(),time:f12(now),wfh_status:wfh?'Work from Home':'Work from Office'});
+    sendEmail(buildToList([mgrEmail],getAdminEmails()),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
+  }h`:'';
   lg(CU.id,CU.name,'CLOCK_OUT',`Clocked out at ${f12(now)}, Total: ${arr[i].hours}h${ot}`);
   toast(`Clocked out · ${arr[i].hours}h${arr[i].overtime?' (+'+arr[i].overtime+'h OT)':''}`,arr[i].overtime?'info':'success');
   const otNote=arr[i].overtime?` (+${arr[i].overtime}h overtime)`:'';
@@ -1737,45 +1792,10 @@ function clockOut() {
   const mgrEmail=CU.managerEmail||'';
   if(mgrEmail){
     const notifyEmails=[mgrEmail,...(arr[i].overtime?getAdminEmails():[])].filter((v,i2,a)=>a.indexOf(v)===i2&&v);
-    if(canSendNotif('clockOut')){sendEmail(buildToList(notifyEmails),emailHtml('Employee Clock-Out',
-      `<p><b>${CU.name}</b> has clocked out.</p>
-       <table style="width:100%;border-collapse:collapse;font-size:13px">
-         <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Clock-In</td><td>${arr[i].in}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Clock-Out</td><td style="font-weight:700;color:#1E293B">${arr[i].out}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td><b>${arr[i].hours}h</b></td></tr>
-         ${arr[i].overtime?`<tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>`:''}
-       </table>`))};
-  } else if(arr[i].overtime){
-    if(canSendNotif('clockOut')){sendEmail(buildToList(getAdminEmails()),'⚡ Overtime — '+CU.name,emailHtml('Overtime Alert',
-      `<p><b>${CU.name}</b> logged overtime today.</p>
-       <table style="width:100%;border-collapse:collapse;font-size:13px">
-         <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td>${arr[i].hours}h</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>
-       </table>`))};
+    if(canSendNotif('clockOut')){
+    const _t=renderTemplate('clockOut',{employee_name:CU.name,department:CU.dept,date:td(),time:arr[i].out,hours:arr[i].hours,overtime_line:arr[i].overtime>0?'\nOvertime: +'+arr[i].overtime+'h':''});
+    sendEmail(buildToList(notifyEmails),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
   }
-  navigate('dashboard');
-}
-
-// ════════════════════════════════════════════
-// BREAKS
-// ════════════════════════════════════════════
-function activeBrk(uid) { return DB.get('breaks').find(b=>b.uid===uid&&b.date===td()&&!b.end)||null; }
-function totalBrkMin(attId) { return DB.get('breaks').filter(b=>b.attId===attId&&b.end).reduce((s,b)=>s+(b.min||0),0); }
-
-function startBreak() {
-  const att=todayAtt(CU.id);
-  if (!att||att.out) return toast('Clock in first','error');
-  if (activeBrk(CU.id)) return toast('Already on a break','error');
-  const now=new Date();
-  const b={id:'b_'+Date.now(),attId:att.id,uid:CU.id,date:td(),start:ft(now),end:null,min:null};
-  const arr=DB.get('breaks'); arr.push(b); dbSet('breaks',arr);
-  lg(CU.id,CU.name,'BREAK_START','Break started at '+f12(now));
-  toast('Break started','info'); navigate('dashboard');
-}
 
 function endBreak() {
   const arr=DB.get('breaks');
@@ -1810,112 +1830,15 @@ function submitLeave(type,sd,ed,mgrEmail,reason) {
   // Email manager + admins + CC
   if (canSendNotif('leaveRequest')) {
     const toEmails = buildToList(getAdminEmails(), [mgrEmail], ccEmails);
-    sendEmail(toEmails,`📋 Leave Request — ${CU.name}`,emailHtml('New Leave Request',
-    `<p><b>${CU.name}</b> has submitted a leave request requiring your review.</p>
-     <table style="width:100%;border-collapse:collapse;font-size:13px">
-       <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
-       <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
-       <tr><td style="padding:6px 0;color:#64748B">Leave Type</td><td style="text-transform:capitalize">${type}</td></tr>
-       <tr><td style="padding:6px 0;color:#64748B">From</td><td>${sd}</td></tr>
-       <tr><td style="padding:6px 0;color:#64748B">To</td><td>${ed}</td></tr>
-       <tr><td style="padding:6px 0;color:#64748B">Days</td><td><b>${days}</b></td></tr>
-       <tr><td style="padding:6px 0;color:#64748B">Reason</td><td>${reason}</td></tr>
-       ${ccNames ? `<tr><td style="padding:6px 0;color:#64748B">CC</td><td>${ccNames}</td></tr>` : ''}
-     </table>`,
-    'Please log in to HRMS to approve or reject this request.'))
-  };
-  toast('Leave request submitted','success'); closeModal(); navigate('leaves');
-}
-
-function reviewLeave(id,status,comment) {
-  const arr=DB.get('leaves');
-  const i=arr.findIndex(l=>l.id===id);
-  if (i<0) return toast('Not found','error');
-  arr[i].status=status; arr[i].reviewBy=CU.name; arr[i].reviewOn=td(); arr[i].comment=comment||'';
-  dbSet('leaves',arr);
-  if(status==='approved') deductBalance(arr[i]);
-  lg(CU.id,CU.name,'LEAVE_REVIEW',`${status} leave of ${arr[i].uname}`);
-  toast('Leave '+status,'success'); closeModal(); navigate('leaves-admin');
-}
-
-// ════════════════════════════════════════════
-// EMPLOYEES
-// ════════════════════════════════════════════
-function saveEmp(data,editId) {
-  const users=DB.get('users');
-  if (!data.name||!data.username||(!editId&&!data.password)) return toast('Name and username required','error');
-  if (!editId&&users.find(u=>u.username===data.username)) return toast('Username already taken','error');
-  if (editId) {
-    const i=users.findIndex(u=>u.id===editId);
-    if (i<0) return;
-    Object.assign(users[i],data); dbSet('users',users);
-    lg(CU.id,CU.name,'EMP_EDIT','Edited: '+data.name); toast('Employee updated','success');
-  } else {
-    users.push({id:'u_'+Date.now(),...data,role:data.role||'employee',active:true});
-    dbSet('users',users);
-    lg(CU.id,CU.name,'EMP_ADD','Added: '+data.name); toast('Employee added','success');
-  }
-  closeModal(); navigate('employees');
-}
-
-function toggleEmp(uid) {
-  const users=DB.get('users'), i=users.findIndex(u=>u.id===uid);
-  if (i<0) return;
-  users[i].active=!users[i].active; dbSet('users',users);
-  lg(CU.id,CU.name,users[i].active?'EMP_ACTIVATE':'EMP_DEACTIVATE',users[i].name);
-  toast(users[i].name+' '+(users[i].active?'activated':'deactivated'),'info');
-  navigate('employees');
-}
-
-// ════════════════════════════════════════════
-// ANNOUNCEMENTS
-// ════════════════════════════════════════════
-function postAnn(title,body,type,priority) {
-  if (!title.trim()||!body.trim()) return toast('Title and message required','error');
-  const ann={id:'ann_'+Date.now(),title:title.trim(),body:body.trim(),type,priority,by:CU.name,date:td(),readBy:[]};
-  const arr=DB.get('announcements'); arr.unshift(ann); dbSet('announcements',arr);
-  lg(CU.id,CU.name,'ANNOUNCE_POST','Posted: '+title);
-  toast('Announcement posted','success'); closeModal(); navigate('announcements-admin');
-}
-
-function deleteAnn(id) {
-  if (!confirm('Delete this announcement?')) return;
-  const rec=DB.get('announcements').find(a=>a.id===id);
-  dbRemove('announcements',rec);
-  lg(CU.id,CU.name,'ANNOUNCE_DEL','Deleted announcement');
-  toast('Deleted','info'); navigate('announcements-admin');
-}
-
-function markRead(id) {
-  const arr=DB.get('announcements'), i=arr.findIndex(a=>a.id===id);
-  if (i<0||arr[i].readBy.includes(CU.id)) return;
-  arr[i].readBy.push(CU.id); dbSet('announcements',arr);
-}
-
-// ════════════════════════════════════════════
-// NOTIFICATION SYSTEM
-// ════════════════════════════════════════════
-function addNotif(title, msg, type) {
-  const notifs = DB.get('notifications');
-  notifs.unshift({id:'n_'+Date.now(), title, msg, type:type||'info', ts:new Date().toISOString(), read:false});
-  if(notifs.length>50) notifs.splice(50);
-  DB.set('notifications', notifs);
-  updateBell();
-}
-function updateBell() {
-  const notifs = DB.get('notifications');
-  const annUnread = DB.get('announcements').filter(a=>!a.readBy.includes(CU.id)).length;
-  const notifUnread = notifs.filter(n=>!n.read).length;
-  const total = notifUnread + annUnread;
-  const cnt = gi('bell-cnt');
-  if (cnt) { cnt.textContent = total>9?'9+':total; cnt.style.display = total>0?'flex':'none'; }
-  renderNotifList();
-}
-function syncBell() { updateBell(); }
-function renderNotifList() {
-  const el = gi('notif-list'); if (!el) return;
-  const notifs = DB.get('notifications');
-  const annUnread = DB.get('announcements').filter(a=>!a.readBy.includes(CU.id));
+    (()=>{
+      const _t=renderTemplate('leaveRequest',{
+        employee_name:CU.name, department:CU.dept,
+        leave_type:type, leave_from:sd, leave_to:ed, leave_days:days,
+        reason:reason, manager:(DB.get('users').find(u=>u.email===mgrEmail)||{}).name||mgrEmail,
+        date:td()
+      });
+      sendEmail(toEmails, _t.subject, emailHtml(_t.subject, templateBodyToHtml(_t.body)));
+    })();
   if (!notifs.length && !annUnread.length) { el.innerHTML=`<div class="notif-empty">No notifications yet</div>`; return; }
   const icons = {late:'⏰', leave:'📋', logout:'👋', summary:'📊', info:'ℹ️'};
   let html = annUnread.map(a=>`<div class="notif-item unread"><div class="notif-dot"></div><div class="notif-body"><div class="notif-title">📢 ${esc(a.title)}</div><div class="notif-msg">${esc(a.body.substring(0,80))}${a.body.length>80?'…':''}</div><div class="notif-time">${a.date}</div></div></div>`).join('');
@@ -1964,6 +1887,235 @@ async function sendEmail(toEmails, subject, htmlBody) {
 }
 
   // ── Email config helpers ─────────────────────────────────────────────────
+  
+  // ════════════════════════════════════════════
+  // EMAIL TEMPLATES
+  // ════════════════════════════════════════════
+  const DEFAULT_EMAIL_TEMPLATES = {
+    leaveRequest: {
+      subject: '📋 Leave Request — {{employee_name}}',
+      body: 'Hi,\n\n{{employee_name}} from {{department}} has submitted a {{leave_type}} leave request.\n\nFrom: {{leave_from}}\nTo: {{leave_to}}\nDays: {{leave_days}}\nReason: {{reason}}\nManager: {{manager}}\n\nPlease log in to HRMS to review this request.'
+    },
+    leaveReview: {
+      subject: '{{status_emoji}} Leave {{status_cap}} — {{leave_type}}',
+      body: 'Hi {{employee_name}},\n\nYour {{leave_type}} leave request ({{leave_from}} to {{leave_to}}, {{leave_days}} day(s)) has been {{status}} by {{reviewed_by}}.\n\n{{comment_line}}If you have questions, please contact HR.'
+    },
+    clockIn: {
+      subject: '🟢 Clock-In: {{employee_name}}',
+      body: '{{employee_name}} ({{department}}) has clocked in.\n\nDate: {{date}}\nTime: {{time}}\nStatus: {{wfh_status}}'
+    },
+    lateArrival: {
+      subject: '⏰ Late Arrival — {{employee_name}}',
+      body: '{{employee_name}} ({{department}}) clocked in late today.\n\nDate: {{date}}\nClock-in: {{time}}\nOffice Start: {{office_start}}\n\nThis is an automated alert.'
+    },
+    clockOut: {
+      subject: '🔴 Clock-Out: {{employee_name}}',
+      body: '{{employee_name}} ({{department}}) has clocked out.\n\nDate: {{date}}\nClock-out Time: {{time}}\nTotal Hours: {{hours}}h{{overtime_line}}'
+    },
+    overtime: {
+      subject: '⚡ Overtime — {{employee_name}}',
+      body: '{{employee_name}} ({{department}}) logged overtime today.\n\nDate: {{date}}\nTotal Hours: {{hours}}h\nOvertime: +{{overtime}}h\n\nThis is an automated alert.'
+    }
+  };
+
+  const TEMPLATE_META = {
+    leaveRequest: {
+      label: 'Leave Request',
+      placeholders: ['employee_name','department','leave_type','leave_from','leave_to','leave_days','reason','manager','date']
+    },
+    leaveReview: {
+      label: 'Leave Reviewed',
+      placeholders: ['employee_name','leave_type','leave_from','leave_to','leave_days','status','status_cap','status_emoji','reviewed_by','comment_line','date']
+    },
+    clockIn: {
+      label: 'Clock In',
+      placeholders: ['employee_name','department','date','time','wfh_status']
+    },
+    lateArrival: {
+      label: 'Late Arrival',
+      placeholders: ['employee_name','department','date','time','office_start']
+    },
+    clockOut: {
+      label: 'Clock Out',
+      placeholders: ['employee_name','department','date','time','hours','overtime_line']
+    },
+    overtime: {
+      label: 'Overtime',
+      placeholders: ['employee_name','department','date','time','hours','overtime']
+    }
+  };
+
+  function getEmailTemplate(key) {
+    const s = DB.one('settings') || {};
+    const saved = (s.emailTemplates || {})[key];
+    return saved || DEFAULT_EMAIL_TEMPLATES[key];
+  }
+
+  function renderTemplate(key, vars) {
+    const tmpl = getEmailTemplate(key);
+    let subject = tmpl.subject;
+    let body    = tmpl.body;
+    Object.entries(vars).forEach(([k, v]) => {
+      const re = new RegExp('\\{\\{' + k + '\\}\\}', 'g');
+      subject = subject.replace(re, v || '');
+      body    = body.replace(re, v || '');
+    });
+    // Remove any unreplaced placeholders
+    subject = subject.replace(/\{\{[^}]+\}\}/g, '');
+    body    = body.replace(/\{\{[^}]+\}\}/g, '');
+    return { subject, body };
+  }
+
+  function templateBodyToHtml(body) {
+    // Convert plain text template body to HTML paragraphs
+    return body.split('\n\n').map(para =>
+      '<p>' + para.replace(/\n/g, '<br>') + '</p>'
+    ).join('');
+  }
+
+  // ── Template editor UI ────────────────────────────────────────────────
+  let _etActive = 'leaveRequest';
+
+  function renderTemplateEditor() {
+    const s = DB.one('settings') || {};
+    const savedTmpls = s.emailTemplates || {};
+    const tabs = Object.entries(TEMPLATE_META).map(([key, meta]) =>
+      `<button class="et-tab${key===_etActive?' active':''}" onclick="switchEtTab('${key}')">${meta.label}</button>`
+    ).join('');
+
+    const panels = Object.entries(TEMPLATE_META).map(([key, meta]) => {
+      const tmpl = savedTmpls[key] || DEFAULT_EMAIL_TEMPLATES[key];
+      const phChips = meta.placeholders.map(p =>
+        `<span class="et-ph" onclick="insertPlaceholder('et-body-${key}','{{${p}}}')" title="Click to insert">{{${p}}}</span>`
+      ).join('');
+      return `
+        <div class="et-panel${key===_etActive?' active':''}" id="et-panel-${key}">
+          <div class="fg" style="margin-bottom:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <label>Subject</label>
+              <span class="et-reset" onclick="resetTemplate('${key}','subject')">Reset default</span>
+            </div>
+            <input id="et-subj-${key}" type="text" value="${esc(tmpl.subject)}" placeholder="Email subject…">
+          </div>
+          <div class="fg">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <label>Body</label>
+              <span class="et-reset" onclick="resetTemplate('${key}','body')">Reset default</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">
+              Click a placeholder to insert it at the cursor position:
+            </div>
+            <div class="et-ph-wrap">${phChips}</div>
+            <textarea id="et-body-${key}" rows="7" style="font-family:monospace;font-size:12px;resize:vertical" placeholder="Email body…">${esc(tmpl.body)}</textarea>
+          </div>
+          <button class="et-preview-btn" onclick="previewTemplate('${key}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            Preview Email
+          </button>
+          <div class="et-preview-box" id="et-prev-${key}">
+            <iframe class="et-preview-frame" id="et-frame-${key}" sandbox="allow-same-origin"></iframe>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="et-tabs">${tabs}</div>
+      ${panels}`;
+  }
+
+  function switchEtTab(key) {
+    _etActive = key;
+    // Just re-render the template section without losing other settings
+    const container = gi('et-container');
+    if (container) container.innerHTML = renderTemplateEditor();
+  }
+
+  function insertPlaceholder(fieldId, placeholder) {
+    const el = gi(fieldId);
+    if (!el) return;
+    const start = el.selectionStart, end = el.selectionEnd;
+    el.value = el.value.slice(0, start) + placeholder + el.value.slice(end);
+    el.selectionStart = el.selectionEnd = start + placeholder.length;
+    el.focus();
+  }
+
+  function resetTemplate(key, field) {
+    const dflt = DEFAULT_EMAIL_TEMPLATES[key];
+    if (field === 'subject') {
+      const el = gi('et-subj-' + key);
+      if (el) { el.value = dflt.subject; el.focus(); }
+    } else {
+      const el = gi('et-body-' + key);
+      if (el) { el.value = dflt.body; el.focus(); }
+    }
+  }
+
+  function previewTemplate(key) {
+    const subject = gi('et-subj-' + key)?.value || '';
+    const body    = gi('et-body-' + key)?.value || '';
+    const s = DB.one('settings') || {};
+    const ec = s.emailConfig || {};
+    const hdrColor = ec.headerColor || '#1E293B';
+    const orgName  = s.orgName || 'Zenex Partners';
+    const ftText   = ec.footerText || orgName + ' HR Team';
+    // Sample vars for preview
+    const sampleBody = body
+      .replace(/\{\{employee_name\}\}/g, 'Jane Smith')
+      .replace(/\{\{department\}\}/g, 'Engineering')
+      .replace(/\{\{leave_type\}\}/g, 'Annual Leave')
+      .replace(/\{\{leave_from\}\}/g, '2026-06-20')
+      .replace(/\{\{leave_to\}\}/g, '2026-06-22')
+      .replace(/\{\{leave_days\}\}/g, '3')
+      .replace(/\{\{reason\}\}/g, 'Family vacation')
+      .replace(/\{\{manager\}\}/g, 'John Manager')
+      .replace(/\{\{status\}\}/g, 'approved')
+      .replace(/\{\{status_cap\}\}/g, 'Approved')
+      .replace(/\{\{status_emoji\}\}/g, '✅')
+      .replace(/\{\{reviewed_by\}\}/g, 'Admin User')
+      .replace(/\{\{comment_line\}\}/g, 'Comment: Approved, enjoy your leave.\n\n')
+      .replace(/\{\{date\}\}/g, new Date().toLocaleDateString())
+      .replace(/\{\{time\}\}/g, new Date().toLocaleTimeString())
+      .replace(/\{\{wfh_status\}\}/g, 'Work from Office')
+      .replace(/\{\{office_start\}\}/g, '09:00')
+      .replace(/\{\{hours\}\}/g, '9.5')
+      .replace(/\{\{overtime\}\}/g, '1.5')
+      .replace(/\{\{overtime_line\}\}/g, '\nOvertime: +1.5h')
+      .replace(/\{\{[^}]+\}\}/g, '');
+    const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:${hdrColor};padding:20px 24px;border-radius:8px 8px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:18px">${esc(orgName)} HRMS</h2>
+        <p style="color:rgba(255,255,255,.65);margin:4px 0 0;font-size:13px">Email Preview</p>
+      </div>
+      <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none">
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:16px">
+          <div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Subject</div>
+          <div style="font-size:14px;font-weight:600;color:#0F172A">${esc(subject).replace(/\{\{[^}]+\}\}/g,'')}</div>
+        </div>
+        ${templateBodyToHtml(sampleBody)}
+      </div>
+      <div style="background:#e2e8f0;padding:14px 24px;border-radius:0 0 8px 8px;text-align:center">
+        <p style="font-size:12px;color:#64748B;margin:0">${esc(ftText)}</p>
+      </div>
+    </div>`;
+    const prev = gi('et-prev-' + key);
+    const frame = gi('et-frame-' + key);
+    if (prev && frame) {
+      prev.classList.add('open');
+      frame.srcdoc = htmlBody;
+    }
+  }
+
+  function collectEmailTemplates() {
+    const tmpls = {};
+    Object.keys(TEMPLATE_META).forEach(key => {
+      const subj = gi('et-subj-' + key);
+      const body = gi('et-body-' + key);
+      if (subj && body) tmpls[key] = { subject: subj.value, body: body.value };
+    });
+    return tmpls;
+  }
+
+
   function getEmailConfig() {
     const s = DB.one('settings') || {};
     return s.emailConfig || {};
@@ -3256,6 +3408,20 @@ function pgSettings(){
       </div>
     </div>
 
+    <!-- Email Templates -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">Email Templates</span>
+        <span style="font-size:11px;color:var(--text-3);font-weight:400">Customise what each notification email says</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--text-3);margin-bottom:16px">
+          Use placeholders like <code style="background:var(--primary-l);padding:1px 6px;border-radius:4px;font-size:11px">{{employee_name}}</code> — they are replaced with real values when the email is sent.
+        </p>
+        <div id="et-container">\${renderTemplateEditor()}</div>
+      </div>
+    </div>
+
     <!-- Data Management -->
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><span class="card-title">Data Management</span></div>
@@ -3290,10 +3456,11 @@ function saveSettings(){
     footerText:      gi('ec-footer').value.trim(),
   };
   DB.setOne('settings',{
-    orgName:     gi('st-org').value,
-    officeStart: gi('st-s').value,
-    officeEnd:   gi('st-e').value,
-    emailConfig: ec
+    orgName:        gi('st-org').value,
+    officeStart:    gi('st-s').value,
+    officeEnd:      gi('st-e').value,
+    emailConfig:    ec,
+    emailTemplates: collectEmailTemplates()
   });
   toast('Settings saved','success');
 }
