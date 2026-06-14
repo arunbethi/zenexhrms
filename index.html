@@ -1535,12 +1535,12 @@ async function msLogin() {
     let result;
     if (accounts.length > 0) {
       try {
-        result = await instance.acquireTokenSilent({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'], account: accounts[0] });
+        result = await instance.acquireTokenSilent({ scopes: ['User.Read','https://graph.microsoft.com/Mail.Send'], account: accounts[0] });
       } catch(_) {
-        result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'] });
+        result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Mail.Send'] });
       }
     } else {
-      result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'] });
+      result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Mail.Send'] });
     }
 
     // Domain restriction — only @zenexpartners.net accounts allowed
@@ -1583,235 +1583,141 @@ function msErrMsg(e) {
 }
 
 // ════════════════════════════════════════════
-// SHAREPOINT / GRAPH API LAYER
+// SUPABASE BACKEND LAYER
 // ════════════════════════════════════════════
-const SP = {
-  siteId: null,
-  listIds: {},
-  GRAPH: 'https://graph.microsoft.com/v1.0',
-  SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'],
-  LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs','ZP_Notifications','ZP_EmailTemplates','ZP_Documents'],
+const SB_URL = 'https://dscqybkzvbnhphdrjfzz.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzY3F5Ymt6dmJuaHBoZHJqZnp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MjM3NzEsImV4cCI6MjA5Njk5OTc3MX0.ZsAe94H8IAZVQy_GLLW7mmmTJe1oEr5hHYt2Dg-3GA0';
+let _sbReady = false;
 
-  async token() {
-    if (!_msalInstance) return null;
-    const accounts = _msalInstance.getAllAccounts();
-    if (!accounts.length) return null;
+const SB = {
+  _h(extra) {
+    return Object.assign({
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json'
+    }, extra || {});
+  },
+
+  async getAll(table) {
     try {
-      const r = await _msalInstance.acquireTokenSilent({ scopes: this.SCOPES, account: accounts[0] });
-      return r.accessToken;
-    } catch(e) {
-      try { const r = await _msalInstance.acquireTokenPopup({ scopes: this.SCOPES }); return r.accessToken; }
-      catch(e2) { return null; }
-    }
+      const resp = await fetch(SB_URL + '/rest/v1/' + table + '?select=data&limit=10000', {
+        headers: this._h()
+      });
+      if (!resp.ok) { console.warn('SB getAll', table, resp.status); return null; }
+      const rows = await resp.json();
+      return rows.map(r => r.data).filter(Boolean);
+    } catch(e) { console.warn('SB getAll error', e); return null; }
   },
 
-  async req(method, path, body) {
-    const tok = await this.token();
-    if (!tok) return null;
+  async upsert(table, record) {
+    if (!record || !record.id) return;
+    const clean = table === 'zp_documents' ? { ...record, data: undefined } : record;
     try {
-      const resp = await fetch(this.GRAPH + path, {
-        method,
-        headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined
+      const resp = await fetch(SB_URL + '/rest/v1/' + table, {
+        method: 'POST',
+        headers: this._h({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify({ id: record.id, data: clean, updated_at: new Date().toISOString() })
       });
-      if (!resp.ok) { console.warn('SP', resp.status, path); return null; }
-      if (method === 'DELETE') return true;
-      return resp.json();
-    } catch(e) { console.warn('SP fetch', e); return null; }
+      if (!resp.ok) { const t = await resp.text(); console.warn('SB upsert', table, resp.status, t); }
+    } catch(e) { console.warn('SB upsert error', e); }
   },
 
-  async init() {
-    spMsg('Connecting to SharePoint…');
-    const site = await this.req('GET', '/sites/zenexpartners.sharepoint.com:/sites/HRPortal');
-    if (!site) { spMsg('❌ Cannot reach SharePoint site','Check permissions and try again'); return false; }
-    this.siteId = site.id;
-    console.log('SP site id:', this.siteId);
-
-    spMsg('Checking existing lists…');
-    const existing = await this.req('GET', `/sites/${this.siteId}/lists?$select=id,name&$top=200`);
-    if (existing) existing.value.forEach(l => { this.listIds[l.name] = l.id; });
-    console.log('Existing lists:', Object.keys(this.listIds));
-
-    // Create any missing lists — two-step: create list, then add column
-    for (const name of this.LISTS) {
-      if (!this.listIds[name]) {
-        spMsg('Creating list: ' + name + '…');
-        const list = await this.req('POST', `/sites/${this.siteId}/lists`, {
-          displayName: name,
-          list: { template: 'genericList' }
-        });
-        if (list) {
-          this.listIds[name] = list.id;
-          console.log('Created list:', name, list.id);
-          // Add RecordData column separately
-          await this.req('POST', `/sites/${this.siteId}/lists/${list.id}/columns`, {
-            name: 'RecordData',
-            text: { allowMultipleLines: true }
-          });
-        } else {
-          console.error('Failed to create list:', name);
-          spMsg('⚠️ Failed to create: ' + name, 'Check console for details');
-        }
-      } else {
-        console.log('List exists:', name, this.listIds[name]);
-      }
-    }
-    // Ensure readable columns exist on all lists
-    spMsg('Setting up columns…');
-    for (const name of this.LISTS) {
-      if (this.listIds[name]) await this.ensureColumns(name);
-    }
-    return true;
-  },
-
-  async getAll(listName) {
-    if (!this.siteId || !this.listIds[listName]) return null;
-    let items = [], nextUrl = `/sites/${this.siteId}/lists/${this.listIds[listName]}/items?$expand=fields($select=Title,RecordData)&$top=999`;
-    while (nextUrl) {
-      const page = await this.req('GET', nextUrl);
-      if (!page) break;
-      page.value.forEach(i => {
-        try { const r = JSON.parse(i.fields.RecordData || '{}'); r._spId = i.id; if (r.id) items.push(r); } catch(e) {}
+  async remove(table, id) {
+    if (!id) return;
+    try {
+      await fetch(SB_URL + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(id), {
+        method: 'DELETE',
+        headers: this._h()
       });
-      nextUrl = page['@odata.nextLink'] ? page['@odata.nextLink'].replace(this.GRAPH,'') : null;
-    }
-    return items;
-  },
-
-  // upsert defined below in extended SP block
-
-
-  async remove(listName, spId) {
-    if (!this.siteId || !this.listIds[listName] || !spId) return;
-    await this.req('DELETE', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${spId}`);
-  },
-
-  // Proper column schemas per list
-  COLUMNS: {
-    'ZP_Users':         [{name:'EmployeeID',text:{}},{name:'FullName',text:{}},{name:'Username',text:{}},{name:'Role',text:{}},{name:'Department',text:{}},{name:'Position',text:{}},{name:'WorkEmail',text:{}},{name:'Phone',text:{}},{name:'JoinDate',text:{}},{name:'Status',text:{}}],
-    'ZP_Attendance':    [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'WorkDate',text:{}},{name:'ClockIn',text:{}},{name:'ClockOut',text:{}},{name:'HoursWorked',number:{decimalPlaces:'two'}},{name:'LateArrival',text:{}},{name:'Overtime',number:{decimalPlaces:'two'}}],
-    'ZP_Leaves':        [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'LeaveType',text:{}},{name:'FromDate',text:{}},{name:'ToDate',text:{}},{name:'Days',number:{}},{name:'Reason',text:{allowMultipleLines:true}},{name:'Status',text:{}},{name:'ApprovedBy',text:{}}],
-    'ZP_Breaks':        [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'BreakDate',text:{}},{name:'StartTime',text:{}},{name:'EndTime',text:{}},{name:'DurationMins',number:{}}],
-    'ZP_Logs':          [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'Action',text:{}},{name:'Detail',text:{allowMultipleLines:true}},{name:'Timestamp',text:{}}],
-    'ZP_Announcements': [{name:'Body',text:{allowMultipleLines:true}},{name:'AuthorName',text:{}},{name:'PostedAt',text:{}}],
-    'ZP_Notifications': [{name:'EmployeeID',text:{}},{name:'Message',text:{allowMultipleLines:true}},{name:'NotifType',text:{}},{name:'IsRead',text:{}},{name:'Timestamp',text:{}}],
-    'ZP_EmailTemplates':[{name:'TemplateKey',text:{}},{name:'Subject',text:{}},{name:'Body',text:{allowMultipleLines:true}}],
-    'ZP_Documents':    [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'DocType',text:{}},{name:'DocLabel',text:{}},{name:'FileName',text:{}},{name:'UploadedAt',text:{}}]
-  },
-
-  // Ensure proper readable columns exist on each list (adds missing ones)
-  async ensureColumns(listName) {
-    const listId = this.listIds[listName];
-    if (!listId || !this.COLUMNS[listName]) return;
-    const existing = await this.req('GET', `/sites/${this.siteId}/lists/${listId}/columns?$select=name&$top=100`);
-    const existingNames = existing ? existing.value.map(c=>c.name) : [];
-    for (const col of this.COLUMNS[listName]) {
-      if (!existingNames.includes(col.name)) {
-        await this.req('POST', `/sites/${this.siteId}/lists/${listId}/columns`, col);
-      }
-    }
-  },
-
-  // Map a record to readable SP field values
-  readableFields(listName, r) {
-    const uname = (uid) => { try { const u=(DB.get('users')||[]).find(u=>u.id===uid); return u?u.name:''; } catch(e){return '';} };
-    switch(listName) {
-      case 'ZP_Users': return { EmployeeID:r.id||'', FullName:r.name||'', Username:r.username||'', Role:r.role||'', Department:r.dept||'', Position:r.position||'', WorkEmail:r.email||'', Phone:r.phone||'', JoinDate:r.join||'', Status:r.active===false?'Inactive':'Active' };
-      case 'ZP_Attendance': return { EmployeeID:r.uid||'', EmployeeName:r.name||uname(r.uid), WorkDate:r.date||'', ClockIn:r.in||'', ClockOut:r.out||'', HoursWorked:r.hours||0, LateArrival:r.late?'Yes':'No', Overtime:r.overtime||0 };
-      case 'ZP_Leaves': return { EmployeeID:r.uid||'', EmployeeName:r.name||uname(r.uid), LeaveType:r.type||'', FromDate:r.from||'', ToDate:r.to||'', Days:r.days||0, Reason:r.reason||'', Status:r.status||'pending', ApprovedBy:r.approvedBy||'' };
-      case 'ZP_Breaks': return { EmployeeID:r.uid||'', EmployeeName:uname(r.uid), BreakDate:r.date||'', StartTime:r.start||'', EndTime:r.end||'', DurationMins:r.min||0 };
-      case 'ZP_Logs': return { EmployeeID:r.uid||'', EmployeeName:r.name||'', Action:r.action||'', Detail:r.detail||'', Timestamp:r.ts||'' };
-      case 'ZP_Announcements': return { Body:r.msg||'', AuthorName:r.authorName||'', PostedAt:r.ts||'' };
-      case 'ZP_Notifications': return { EmployeeID:r.uid||'', Message:r.msg||'', NotifType:r.type||'', IsRead:r.read?'Yes':'No', Timestamp:r.ts||'' };
-      case 'ZP_EmailTemplates': return { TemplateKey:r.key||r.id||'', Subject:r.subject||'', Body:r.body||'' };
-      case 'ZP_Documents': { const u2=(DB.get('users')||[]).find(u=>u.id===r.uid); return { EmployeeID:r.uid||'', EmployeeName:u2?u2.name:'', DocType:r.type||'', DocLabel:r.label||'', FileName:r.name||'', UploadedAt:r.uploadedAt||'' }; }
-      default: return {};
-    }
-  },
-
-  async upsert(listName, record) {
-    if (!this.siteId || !this.listIds[listName] || !record || !record.id) return;
-    const fields = { Title: String(record.id), RecordData: JSON.stringify(record), ...this.readableFields(listName, record) };
-    if (record._spId) {
-      await this.req('PATCH', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${record._spId}/fields`, fields);
-    } else {
-      const result = await this.req('POST', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items`, { fields });
-      if (result) { record._spId = result.id || result.fields?.id; }
-    }
+    } catch(e) { console.warn('SB remove error', e); }
   }
 };
 
-// DB key → SP list name
-const SP_MAP = { users:'ZP_Users', attendance:'ZP_Attendance', breaks:'ZP_Breaks', leaves:'ZP_Leaves', announcements:'ZP_Announcements', logs:'ZP_Logs', notifications:'ZP_Notifications', email_templates:'ZP_EmailTemplates', documents:'ZP_Documents' };
+// DB key → Supabase table name
+const SB_MAP = {
+  users: 'zp_users',
+  attendance: 'zp_attendance',
+  breaks: 'zp_breaks',
+  leaves: 'zp_leaves',
+  announcements: 'zp_announcements',
+  logs: 'zp_logs',
+  notifications: 'zp_notifications',
+  email_templates: 'zp_email_templates',
+  documents: 'zp_documents'
+};
 
-// Write-through: save to localStorage AND push to SP (non-blocking)
+// Write-through: save to localStorage AND push to Supabase (non-blocking)
 function dbSet(key, value) {
   DB.set(key, value);
-  if (!SP.siteId || !SP_MAP[key]) return;
-  const listName = SP_MAP[key];
+  if (!_sbReady || !SB_MAP[key]) return;
+  const table = SB_MAP[key];
   const records = Array.isArray(value) ? value : [value];
   records.forEach(rec => {
     if (!rec || !rec.id) return;
-    // Strip large base64 data before sending to SP (store metadata only)
-    const spRec = key === 'documents' ? { ...rec, data: undefined } : rec;
-    SP.upsert(listName, spRec).catch(() => {});
+    SB.upsert(table, rec).catch(() => {});
   });
 }
 
-// Remove from SP when deleting a record
+// Remove from Supabase when deleting a record
 function dbRemove(key, record) {
   if (!record) return;
   const newArr = DB.get(key).filter(r => r.id !== record.id);
   DB.set(key, newArr);
-  if (SP.siteId && SP_MAP[key] && record._spId) SP.remove(SP_MAP[key], record._spId).catch(() => {});
+  if (_sbReady && SB_MAP[key]) SB.remove(SB_MAP[key], record.id).catch(() => {});
 }
 
 // Loading overlay helpers
 function spLoading(show) { const el=gi('sp-loading'); if(el) el.style.display=show?'flex':'none'; }
 function spMsg(msg, sub) { const m=gi('sp-msg'),s=gi('sp-sub'); if(m)m.textContent=msg; if(s&&sub)s.textContent=sub; }
 
-// Full sync on login (pull SP → localStorage, push local → SP if SP empty)
+// Full sync on login (pull Supabase ↔ localStorage)
 async function spSync() {
-  if (!_msalInstance) { showAppUI(); return; }
   spLoading(true);
-  const ok = await SP.init();
-  if (!ok) { spLoading(false); toast('SharePoint unavailable — using local data only','error'); showAppUI(); return; }
+  spMsg('Connecting to database…', 'Please wait');
 
-  spMsg('Syncing data…','This only takes a moment');
-  for (const [key, listName] of Object.entries(SP_MAP)) {
-    const spItems = await SP.getAll(listName);
-    if (spItems === null) continue;
-    if (spItems.length > 0) {
-      // SP has data — use it (merge _spId into records)
-      DB.set(key, spItems);
+  const test = await SB.getAll('zp_users');
+  if (test === null) {
+    spLoading(false);
+    toast('Database unavailable — using local data only', 'error');
+    showAppUI();
+    return;
+  }
+  _sbReady = true;
+  spMsg('Syncing data…', 'This only takes a moment');
+
+  for (const [key, table] of Object.entries(SB_MAP)) {
+    const sbItems = await SB.getAll(table);
+    if (sbItems === null) continue;
+    if (sbItems.length > 0) {
+      DB.set(key, sbItems);
     } else {
-      // SP empty — push local data up (first-time migration)
       const local = DB.get(key);
       if (local.length > 0) {
         spMsg('Uploading ' + key + '…');
-        for (const rec of local) { await SP.upsert(listName, rec); }
-        DB.set(key, local); // save with _spId fields updated
+        for (const rec of local) { await SB.upsert(table, rec); }
       }
     }
   }
-  // Always ensure demo/admin seed users exist in SP
-  const spUsers = await SP.getAll('ZP_Users');
-  const spUserIds = (spUsers || []).map(u => u.id);
+
+  // Always ensure demo/admin seed users exist in Supabase
+  const sbUsers = await SB.getAll('zp_users');
+  const sbUserIds = (sbUsers || []).map(u => u.id);
   for (const du of DEMO_USERS) {
-    if (!spUserIds.includes(du.id)) {
-      spMsg('Adding demo user: ' + du.name);
-      await SP.upsert('ZP_Users', du);
+    if (!sbUserIds.includes(du.id)) {
+      spMsg('Adding seed user: ' + du.name);
+      await SB.upsert('zp_users', du);
     }
   }
-  // Refresh local users list from SP (so demo users get _spId)
-  const freshUsers = await SP.getAll('ZP_Users');
+
+  // Refresh local users from Supabase
+  const freshUsers = await SB.getAll('zp_users');
   if (freshUsers && freshUsers.length > 0) DB.set('users', freshUsers);
 
-  // Re-seed demo users into localStorage in case SP didn't have them
+  // Re-seed demo users into localStorage
   seed();
 
   spLoading(false);
-  toast('Synced with SharePoint ✓','success');
+  toast('Synced with database ✓', 'success');
   showAppUI();
 }
 
@@ -2545,7 +2451,7 @@ let curPage='dashboard';
   gi('login-page').style.display='none';
   gi('app').style.display='block';
   // MS users get SharePoint sync; demo users go straight to UI
-  if (CU.msAccount && _msalInstance) { spSync(); } else { showAppUI(); }
+  spSync(); // Sync with Supabase for all users (MS and demo)
 }
 
 // ════════════════════════════════════════════
