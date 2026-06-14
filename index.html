@@ -10,6 +10,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Microsoft Authentication Library v2 (jsdelivr CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2/lib/msal-browser.min.js">
+<!-- Supabase JS client (for Realtime WebSocket subscriptions) -->
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
 // ── Mobile sidebar close ──
 function closeMobileSidebar(){
   gi('sidebar').classList.remove('mob-open');
@@ -1479,7 +1483,7 @@ async function getMsalInstance() {
       authority:   'https://login.microsoftonline.com/' + MS_TENANT_ID,
       redirectUri: window.location.href.split('?')[0].split('#')[0]
     },
-    cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
   });
   // initialize() is required in MSAL Browser v2.28+; safe to call on older versions too
   _msalInitPromise = (typeof instance.initialize === 'function')
@@ -1561,6 +1565,8 @@ async function msLogin() {
       return;
     }
     CU = user; DB.setOne('session', user.id);
+    // Await Supabase push so spSync sees this user immediately
+    try { await SB.upsert('zp_users', user); } catch(_) {}
     lg(user.id, user.name, 'MS_LOGIN', 'Microsoft login: ' + user.email);
     showApp();
   } catch(e) {
@@ -1588,6 +1594,66 @@ function msErrMsg(e) {
 const SB_URL = 'https://dscqybkzvbnhphdrjfzz.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzY3F5Ymt6dmJuaHBoZHJqZnp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MjM3NzEsImV4cCI6MjA5Njk5OTc3MX0.ZsAe94H8IAZVQy_GLLW7mmmTJe1oEr5hHYt2Dg-3GA0';
 let _sbReady = false;
+let _sbClient = null; // Supabase JS client (for Realtime)
+let _rtChannel = null;
+let _rtDebounce = {};
+
+// Reverse map: table → DB key
+const SB_REVERSE = {
+  zp_users:'users', zp_attendance:'attendance', zp_breaks:'breaks',
+  zp_leaves:'leaves', zp_announcements:'announcements', zp_logs:'logs',
+  zp_notifications:'notifications', zp_email_templates:'email_templates',
+  zp_documents:'documents'
+};
+
+function sbInitClient() {
+  if (_sbClient) return;
+  try {
+    _sbClient = window.supabase.createClient(SB_URL, SB_KEY, {
+      realtime: { params: { eventsPerSecond: 10 } }
+    });
+    console.log('Supabase client initialized');
+  } catch(e) { console.warn('Supabase client init error', e); }
+}
+
+function sbStartRealtime() {
+  if (!_sbClient || _rtChannel) return;
+  try {
+    _rtChannel = _sbClient.channel('hrms-live');
+    Object.keys(SB_REVERSE).forEach(table => {
+      _rtChannel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        const key = SB_REVERSE[table];
+        try {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const rec = payload.new && payload.new.data;
+            if (!rec || !rec.id) return;
+            // Skip if this came from the current user's own action (already in localStorage)
+            const arr = DB.get(key);
+            const idx = arr.findIndex(r => r.id === rec.id);
+            if (idx >= 0) arr[idx] = rec; else arr.push(rec);
+            DB.set(key, arr);
+          } else if (payload.eventType === 'DELETE') {
+            const delId = payload.old && payload.old.id;
+            if (!delId) return;
+            DB.set(key, DB.get(key).filter(r => r.id !== delId));
+          }
+          // Debounced re-render of current page
+          clearTimeout(_rtDebounce[key]);
+          _rtDebounce[key] = setTimeout(() => {
+            try {
+              if (typeof navigate === 'function' && curPage) navigate(curPage);
+              if (typeof updateBell === 'function') updateBell();
+            } catch(e) { console.warn('RT re-render error', e); }
+          }, 400);
+        } catch(e) { console.warn('RT handler error', e); }
+      });
+    });
+    _rtChannel.subscribe(status => {
+      console.log('Realtime:', status);
+      if (status === 'SUBSCRIBED') toast('Live sync active ✓', 'success');
+    });
+  } catch(e) { console.warn('sbStartRealtime error', e); }
+}
 
 const SB = {
   _h(extra) {
@@ -1683,6 +1749,8 @@ async function spSync() {
     return;
   }
   _sbReady = true;
+  sbInitClient();
+  sbStartRealtime();
   spMsg('Syncing data…', 'This only takes a moment');
 
   for (const [key, table] of Object.entries(SB_MAP)) {
@@ -1709,9 +1777,16 @@ async function spSync() {
     }
   }
 
-  // Refresh local users from Supabase
+  // Refresh local users from Supabase — ensure current user is included
   const freshUsers = await SB.getAll('zp_users');
-  if (freshUsers && freshUsers.length > 0) DB.set('users', freshUsers);
+  if (freshUsers && freshUsers.length > 0) {
+    // If CU exists but isn't in Supabase yet, add them
+    if (CU && CU.id && !freshUsers.find(u => u.id === CU.id)) {
+      freshUsers.push(CU);
+      SB.upsert('zp_users', CU).catch(() => {});
+    }
+    DB.set('users', freshUsers);
+  }
 
   // Re-seed demo users into localStorage
   seed();
@@ -1823,11 +1898,25 @@ document.addEventListener('click', function(e) {
   if (wrap && !wrap.contains(e.target)) closeProfileMenu();
 });
 
-function restore() {
-  const sid=DB.one('session');
+async function restore() {
+  const sid = DB.one('session');
   if (!sid) return;
-  const user=DB.get('users').find(u=>u.id===sid&&u.active);
-  if (user) { CU=user; showApp(); }
+  // Try local cache first (fast path)
+  let user = DB.get('users').find(u => u.id === sid && u.active !== false);
+  if (!user) {
+    // Not in local cache — fetch from Supabase (handles refresh after sync overwrites)
+    try {
+      spLoading(true); spMsg('Restoring session…', 'Please wait');
+      const sbUsers = await SB.getAll('zp_users');
+      if (sbUsers && sbUsers.length) {
+        DB.set('users', sbUsers);
+        user = sbUsers.find(u => u.id === sid && u.active !== false);
+      }
+      spLoading(false);
+    } catch(e) { spLoading(false); }
+  }
+  if (user) { CU = user; showApp(); }
+  else { DB.setOne('session', null); } // Stale session — clear it
 }
 
 // ════════════════════════════════════════════
