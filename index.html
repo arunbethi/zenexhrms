@@ -1560,17 +1560,41 @@ async function getMsalInstance() {
   return instance;
 }
 
-function msLoginUser(acc) {
+async function msLoginUser(acc) {
   const email = (acc.username || '').toLowerCase();
   const name  = acc.name || acc.username;
-  let users = DB.get('users');
-  let user = users.find(u => (u.email||'').toLowerCase() === email);
+
+  // Helper: pick best match — admin beats employee, earlier id wins ties
+  function bestMatch(list) {
+    const matches = list.filter(u => (u.email||'').toLowerCase() === email);
+    if (!matches.length) return null;
+    return matches.find(u => u.role === 'admin') || matches[0];
+  }
+
+  // 1. Try local cache first
+  let user = bestMatch(DB.get('users'));
+
+  // 2. Not found locally — fetch from Supabase before creating anything
+  if (!user) {
+    try {
+      const sbUsers = await SB.getAll('zp_users');
+      if (sbUsers && sbUsers.length) {
+        DB.set('users', sbUsers);               // update local cache
+        user = bestMatch(sbUsers);
+      }
+    } catch(_) {}
+  }
+
+  // 3. Genuinely new Microsoft user — create as employee
   if (!user) {
     user = { id:'ms_'+Date.now(), name, username:email, password:null, role:'employee',
              dept:'Unassigned', position:'', join:td(), active:true,
              email, phone:'', emergency:'', emergencyPhone:'', msAccount:true };
-    users.push(user); dbSet('users', users);
+    const users = DB.get('users');
+    users.push(user);
+    dbSet('users', users);
   }
+
   return user;
 }
 
@@ -1623,7 +1647,7 @@ async function msLogin() {
       return;
     }
 
-    const user = msLoginUser(result.account);
+    const user = await msLoginUser(result.account);
     if (!user.active) {
       errEl.textContent = 'Your account is deactivated. Contact HR.';
       errEl.style.display = 'block';
@@ -1930,6 +1954,19 @@ async function spSync() {
     DB.set('users', freshUsers);
     // Deduplicate by email (fixes any admin+employee with same email)
     freshUsers = await deduplicateUsersByEmail(freshUsers);
+    // Re-resolve CU from the clean list so role/data is always up-to-date
+    if (CU && CU.email) {
+      const cuEmail = CU.email.toLowerCase();
+      const resolved = freshUsers.find(u => u.role === 'admin' && (u.email||'').toLowerCase() === cuEmail)
+                    || freshUsers.find(u => (u.email||'').toLowerCase() === cuEmail);
+      if (resolved) {
+        CU = resolved;
+        DB.setOne('session', CU.id);
+      }
+    } else if (CU && CU.id) {
+      const resolved = freshUsers.find(u => u.id === CU.id);
+      if (resolved) { CU = resolved; DB.setOne('session', CU.id); }
+    }
   }
 
   // Re-seed demo users into localStorage
@@ -2060,6 +2097,16 @@ async function restore() {
     } catch(e) { spLoading(false); }
   }
   if (user) {
+    // If user found by session id, check if there's a better (admin) match by email
+    if (user.email && user.role !== 'admin') {
+      const allUsers = DB.get('users');
+      const adminMatch = allUsers.find(u => u.role === 'admin' &&
+        (u.email||'').toLowerCase() === user.email.toLowerCase() && u.active !== false);
+      if (adminMatch) {
+        user = adminMatch;
+        DB.setOne('session', adminMatch.id); // update saved session to admin id
+      }
+    }
     CU = user; curPage = 'dashboard';
     // Reinit MSAL so email sending works after a page refresh
     if (user.msAccount && typeof msal !== 'undefined') {
