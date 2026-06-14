@@ -1424,13 +1424,21 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
 // ════════════════════════════════════════════
 // MICROSOFT AUTHENTICATION (MSAL)
 // ════════════════════════════════════════════
-// MSAL v2 — instantiated lazily per login attempt (avoids load-time errors)
+// MSAL v2 — singleton with proper initialization (v2.28+ requires initialize())
 const MS_CLIENT_ID = '1670634a-ddcc-45ff-bc6f-13ca008acf59';
 const MS_TENANT_ID = 'ca04e4b7-c63a-403a-afd4-aaa06cd927f0';
 
-function getMsalInstance() {
+// Singleton instance + initialization promise (prevents interaction_in_progress errors)
+let _msalInstance = null;
+let _msalInitPromise = null;
+
+async function getMsalInstance() {
   if (typeof msal === 'undefined') return null;
-  return new msal.PublicClientApplication({
+  if (_msalInstance && _msalInitPromise) {
+    await _msalInitPromise;
+    return _msalInstance;
+  }
+  const instance = new msal.PublicClientApplication({
     auth: {
       clientId:    MS_CLIENT_ID,
       authority:   'https://login.microsoftonline.com/' + MS_TENANT_ID,
@@ -1438,6 +1446,13 @@ function getMsalInstance() {
     },
     cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
   });
+  // initialize() is required in MSAL Browser v2.28+; safe to call on older versions too
+  _msalInitPromise = (typeof instance.initialize === 'function')
+    ? instance.initialize().then(() => instance.handleRedirectPromise())
+    : instance.handleRedirectPromise();
+  await _msalInitPromise;
+  _msalInstance = instance;
+  return instance;
 }
 
 function msLoginUser(acc) {
@@ -1469,7 +1484,7 @@ async function msLogin() {
 
   // Detect file:// — Azure rejects it
   if (window.location.protocol === 'file:') {
-    errEl.textContent = 'Microsoft login requires a hosted URL (https:// or http://localhost). Open this file via GitHub Pages or a local web server.';
+    errEl.textContent = 'Microsoft login requires a hosted URL (https:// or http://localhost). Open this file via a local web server or GitHub Pages.';
     errEl.style.display = 'block';
     return;
   }
@@ -1477,9 +1492,22 @@ async function msLogin() {
   btn.innerHTML = 'Signing in…'; btn.disabled = true;
 
   try {
-    const instance = getMsalInstance();
-    const result = await instance.loginPopup({ scopes: ['User.Read'] });
-    _msalInstance = instance; // store for SP token reuse
+    const instance = await getMsalInstance();
+    if (!instance) throw new Error('MSAL could not be initialized.');
+
+    // Check for an existing silent account first
+    const accounts = instance.getAllAccounts();
+    let result;
+    if (accounts.length > 0) {
+      try {
+        result = await instance.acquireTokenSilent({ scopes: ['User.Read'], account: accounts[0] });
+      } catch(_) {
+        result = await instance.loginPopup({ scopes: ['User.Read'] });
+      }
+    } else {
+      result = await instance.loginPopup({ scopes: ['User.Read'] });
+    }
+
     const user = msLoginUser(result.account);
     if (!user.active) {
       errEl.textContent = 'Your account is deactivated. Contact HR.';
@@ -1491,7 +1519,7 @@ async function msLogin() {
     lg(user.id, user.name, 'MS_LOGIN', 'Microsoft login: ' + user.email);
     showApp();
   } catch(e) {
-    if (e.errorCode && e.errorCode !== 'user_cancelled') {
+    if (e.errorCode !== 'user_cancelled' && !(e.message||'').includes('user_cancelled')) {
       errEl.textContent = msErrMsg(e);
       errEl.style.display = 'block';
     }
@@ -1500,14 +1528,14 @@ async function msLogin() {
 }
 
 function msErrMsg(e) {
-  if (e.errorCode === 'popup_window_error') return 'Popup was blocked. Please allow popups for this site and try again.';
-  if (e.errorCode === 'redirect_uri_mismatch') return 'Redirect URI mismatch — ask your IT admin to add this URL in Azure app settings.';
-  if (e.errorCode === 'interaction_in_progress') return 'A sign-in is already in progress. Please wait or reload.';
+  const code = e.errorCode || '';
+  if (code === 'popup_window_error') return 'Popup was blocked. Please allow popups for this site and try again.';
+  if (code === 'redirect_uri_mismatch') return 'Redirect URI mismatch — ask your IT admin to add this page URL in Azure app registrations.';
+  if (code === 'interaction_in_progress') return 'A sign-in is already in progress. Please reload the page and try again.';
+  if (code === 'invalid_client' || code === 'unauthorized_client') return 'Azure app not configured correctly. Check Client ID and tenant settings.';
+  if (code === 'consent_required') return 'Admin consent required. Ask your IT admin to grant permissions for this app.';
   return e.message || 'Microsoft sign-in failed. Try again.';
 }
-
-// Store MSAL instance after login for token reuse
-let _msalInstance = null;
 
 // ════════════════════════════════════════════
 // SHAREPOINT / GRAPH API LAYER
@@ -1777,25 +1805,70 @@ function clockIn(wfh) {
   const arr=DB.get('attendance'); arr.push(rec); dbSet('attendance',arr);
   lg(CU.id,CU.name,'CLOCK_IN','Clocked in at '+f12(now)+(wfh?' (WFH)':''));
   toast('Clocked in at '+f12(now)+(wfh?' — WFH':''),'success');
-  // Notify manager
+  // Notify manager on clock-in
   if(mgrEmail){
-    const s=DB.one('settings')||{};
     if(canSendNotif('clockIn')){
-    const _t=renderTemplate('clockIn',{employee_name:CU.name,department:CU.dept,date:td(),time:f12(now),wfh_status:wfh?'Work from Home':'Work from Office'});
-    sendEmail(buildToList([mgrEmail],getAdminEmails()),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
-  }h`:'';
+      const _t=renderTemplate('clockIn',{employee_name:CU.name,department:CU.dept,date:td(),time:f12(now),wfh_status:wfh?'Work from Home':'Work from Office'});
+      sendEmail(buildToList([mgrEmail],getAdminEmails()),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
+    }
+  }
+  // Late arrival check
+  const s=DB.one('settings')||{};
+  if(s.officeStart){
+    const [sh,sm]=s.officeStart.split(':').map(Number);
+    const limit=sh*60+sm+5;
+    const nowMin=now.getHours()*60+now.getMinutes();
+    if(nowMin>limit && canSendNotif('lateArrival')){
+      const _t=renderTemplate('lateArrival',{employee_name:CU.name,department:CU.dept,date:td(),time:f12(now),office_start:s.officeStart});
+      sendEmail(buildToList(getAdminEmails(),[mgrEmail].filter(Boolean)),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
+    }
+  }
+  navigate('dashboard');
+}
+
+function clockOut() {
+  const arr=DB.get('attendance');
+  const i=arr.findIndex(r=>r.uid===CU.id&&r.date===td()&&!r.out);
+  if(i<0) return toast('Not clocked in today','error');
+  const now=new Date();
+  arr[i].out=ft(now);
+  const ms=tms(arr[i].out)-tms(arr[i].in);
+  const brkMin=DB.get('breaks').filter(b=>b.uid===CU.id&&b.date===td()).reduce((sum,b)=>sum+(b.min||0),0);
+  const rawH=Math.max(0,(ms/3600000)-(brkMin/60));
+  const st=DB.one('settings')||{};
+  const offEnd=st.officeEnd||'18:00';
+  const maxH=Math.max(0,(tms(offEnd)-tms(arr[i].in))/3600000);
+  arr[i].hours=rawH.toFixed(2);
+  arr[i].overtime=rawH>maxH?(rawH-maxH).toFixed(2):null;
+  arr[i].status='present';
+  dbSet('attendance',arr);
+  const ot=arr[i].overtime?` (+${arr[i].overtime}h OT)`:'';
   lg(CU.id,CU.name,'CLOCK_OUT',`Clocked out at ${f12(now)}, Total: ${arr[i].hours}h${ot}`);
   toast(`Clocked out · ${arr[i].hours}h${arr[i].overtime?' (+'+arr[i].overtime+'h OT)':''}`,arr[i].overtime?'info':'success');
   const otNote=arr[i].overtime?` (+${arr[i].overtime}h overtime)`:'';
   addNotif('Clocked Out',`${CU.name} clocked out at ${arr[i].out} · ${arr[i].hours}h${otNote}`,'logout');
-  // Notify manager on clock-out
   const mgrEmail=CU.managerEmail||'';
-  if(mgrEmail){
-    const notifyEmails=[mgrEmail,...(arr[i].overtime?getAdminEmails():[])].filter((v,i2,a)=>a.indexOf(v)===i2&&v);
-    if(canSendNotif('clockOut')){
+  const notifyEmails=[mgrEmail,...(arr[i].overtime?getAdminEmails():[])].filter((v,i2,a)=>v&&a.indexOf(v)===i2);
+  if(canSendNotif('clockOut')&&notifyEmails.length){
     const _t=renderTemplate('clockOut',{employee_name:CU.name,department:CU.dept,date:td(),time:arr[i].out,hours:arr[i].hours,overtime_line:arr[i].overtime>0?'\nOvertime: +'+arr[i].overtime+'h':''});
     sendEmail(buildToList(notifyEmails),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
   }
+  if(arr[i].overtime && canSendNotif('overtime')){
+    const _t=renderTemplate('overtime',{employee_name:CU.name,department:CU.dept,date:td(),time:arr[i].out,hours:arr[i].hours,overtime:arr[i].overtime});
+    sendEmail(buildToList(getAdminEmails()),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
+  }
+  navigate('dashboard');
+}
+
+function startBreak() {
+  if(!todayAtt(CU.id)) return toast('Clock in first','error');
+  if(DB.get('breaks').find(b=>b.uid===CU.id&&b.date===td()&&!b.end)) return toast('Already on break','error');
+  const now=new Date();
+  const brk={id:'b_'+Date.now(),uid:CU.id,date:td(),start:ft(now),end:null,min:null};
+  const arr=DB.get('breaks'); arr.push(brk); dbSet('breaks',arr);
+  lg(CU.id,CU.name,'BREAK_START','Break started at '+f12(now));
+  toast('Break started','success'); navigate('dashboard');
+}
 
 function endBreak() {
   const arr=DB.get('breaks');
@@ -1839,12 +1912,23 @@ function submitLeave(type,sd,ed,mgrEmail,reason) {
       });
       sendEmail(toEmails, _t.subject, emailHtml(_t.subject, templateBodyToHtml(_t.body)));
     })();
+  }
+  closeModal(); navigate('leaves'); toast('Leave request submitted','success');
+}
+
+function renderNotifList() {
+  const el=gi('notif-list');
+  if(!el) return;
+  const notifs=DB.get('notifications').slice().reverse();
+  const annUnread=DB.get('announcements').filter(a=>!(DB.get('readAnn')||[]).includes(a.id));
+  updateBell();
   if (!notifs.length && !annUnread.length) { el.innerHTML=`<div class="notif-empty">No notifications yet</div>`; return; }
   const icons = {late:'⏰', leave:'📋', logout:'👋', summary:'📊', info:'ℹ️'};
   let html = annUnread.map(a=>`<div class="notif-item unread"><div class="notif-dot"></div><div class="notif-body"><div class="notif-title">📢 ${esc(a.title)}</div><div class="notif-msg">${esc(a.body.substring(0,80))}${a.body.length>80?'…':''}</div><div class="notif-time">${a.date}</div></div></div>`).join('');
   html += notifs.map(n=>`<div class="notif-item ${n.read?'':'unread'}"><div class="notif-dot ${n.read?'read':''}"></div><div class="notif-body"><div class="notif-title">${icons[n.type]||'🔔'} ${esc(n.title)}</div><div class="notif-msg">${esc(n.msg)}</div><div class="notif-time">${new Date(n.ts).toLocaleString()}</div></div></div>`).join('');
   el.innerHTML = html;
 }
+
 function toggleNotifPanel() {
   const panel = gi('notif-panel');
   if (!panel) return;
@@ -4289,91 +4373,33 @@ restore();
     { text: "Wake up with determination. Go to bed with satisfaction.", author: "Unknown" },
     { text: "Do something today that your future self will thank you for.", author: "Sean Patrick Flanery" },
     { text: "Little things make big days.", author: "Unknown" },
-    { text: "It's going to be hard, but hard does not mean impossible.", author: "Unknown" },
-    { text: "Don't stop when you're tired. Stop when you're done.", author: "Unknown" },
-    { text: "Opportunities don't happen, you create them.", author: "Chris Grosser" },
-    { text: "Your limitation — it's only your imagination.", author: "Unknown" },
-    { text: "Sometimes later becomes never. Do it now.", author: "Unknown" },
-    { text: "Great workers are made, not born.", author: "Unknown" },
-    { text: "Strive for progress, not perfection.", author: "Unknown" },
-    { text: "You don't have to be great to start, but you have to start to be great.", author: "Zig Ziglar" },
-    { text: "Act as if what you do makes a difference. It does.", author: "William James" },
-    { text: "Start where you are. Use what you have. Do what you can.", author: "Arthur Ashe" }
+    { text: "It\'s going to be hard, but hard does not mean impossible.", author: "Unknown" },
+    { text: "Don\'t stop when you\'re tired. Stop when you\'re done.", author: "Unknown" },
+    { text: "Opportunities don\'t happen, you create them.", author: "Chris Grosser" },
+    { text: "Your limitation — it\'s only your imagination.", author: "Unknown" },
+    { text: "You are never too old to set another goal or dream a new dream.", author: "C.S. Lewis" },
+    { text: "Act as if what you do makes a difference. It does.", author: "William James" }
   ];
 
   function initLoginQuote() {
-    const qText = document.getElementById('lp-q-text');
-    const qAuthor = document.getElementById('lp-q-author');
-    const qDots = document.getElementById('lp-q-dots');
+    var qText = document.getElementById('lp-q-text');
     if (!qText) return;
-
-    const today = new Date().toDateString();
-    let stored = {};
+    var today = new Date().toDateString();
+    var stored = {};
     try { stored = JSON.parse(localStorage.getItem('zp_login_q') || '{}'); } catch(e){}
-
-    let idx = stored.idx ?? Math.floor(Math.random() * LP_QUOTES.length);
+    var idx = (stored.idx !== undefined) ? stored.idx : Math.floor(Math.random() * LP_QUOTES.length);
     if (stored.date !== today) {
       idx = (idx + 1) % LP_QUOTES.length;
-      localStorage.setItem('zp_login_q', JSON.stringify({ date: today, idx }));
+      localStorage.setItem('zp_login_q', JSON.stringify({ date: today, idx: idx }));
     }
-
-    const q = LP_QUOTES[idx];
+    var q = LP_QUOTES[idx];
     qText.textContent = q.text;
-    qAuthor.textContent = '— ' + q.author;
+    var auth = document.getElementById('lp-q-author');
+    if (auth) auth.textContent = '— ' + q.author;
+  }
+  function safeInitQuote() { try { initLoginQuote(); } catch(e){ console.warn('Quote init error:', e); } }
+  setTimeout(safeInitQuote, 0);
 
-    // Dots indicator (shows position in 30-day cycle)
-    if (qDots) {
-      qDots.innerHTML = '';
-      const total = Math.min(5, LP_QUOTES.length);
-      const center = Math.round(total / 2);
-      for (let d = 0; d < total; d++) {
-        const dot = document.createElement('span');
-        if (d === center - 1) dot.className = 'active';
-        qDots.appendChild(dot);
-      }
-    }
-  }
-
-  // Run quote on page load — use setTimeout to ensure DOM is fully ready
-  function safeInitQuote() {
-    try { initLoginQuote(); } catch(e){ console.warn('Quote init error:', e); }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', safeInitQuote);
-  } else {
-    setTimeout(safeInitQuote, 0);
-  }
-
-
-  // ── Topbar profile dropdown ──────────────────────────────────────────
-  function toggleProfileMenu(e){
-    if(e) e.stopPropagation();
-    const m=document.getElementById('tb-profile-menu');
-    if(m) m.classList.toggle('open');
-  }
-  function closeProfileMenu(){
-    const m=document.getElementById('tb-profile-menu');
-    if(m) m.classList.remove('open');
-  }
-  document.addEventListener('click', function(e){
-    const wrap=document.getElementById('tb-profile-wrap');
-    if(wrap && !wrap.contains(e.target)) closeProfileMenu();
-  });
-  function syncTopbarProfile(){
-    try {
-      const u=CU;
-      if(!u) return;
-      const name=u.name||u.displayName||'User';
-      const role=u.role||'employee';
-      const initials=name.split(' ').filter(Boolean).map(function(w){return w[0];}).join('').substring(0,2).toUpperCase()||'U';
-      ['tb-av','tb-pm-av'].forEach(function(id){
-        var el=document.getElementById(id); if(el) el.textContent=initials;
-      });
-      var nm=document.getElementById('tb-pm-name'); if(nm) nm.textContent=name;
-      var rl=document.getElementById('tb-pm-role');
-      if(rl) rl.textContent=role==='admin'?'Administrator':role.charAt(0).toUpperCase()+role.slice(1);
-    } catch(e){ console.warn('syncTopbarProfile error:',e); }
-  }
 </script>
 </body>
 </html>
