@@ -1940,34 +1940,38 @@ function lg(uid,uname,action,details) {
 function todayAtt(uid) { return DB.get('attendance').find(r=>r.uid===uid&&r.date===td())||null; }
 
 function clockIn(wfh) {
+  if (!CU || !CU.id) return toast('Session expired. Please log in again.','error');
   if (todayAtt(CU.id)) return toast('Already clocked in today','error');
-  const mgrEmail=(gi('mgr-email')?gi('mgr-email').value.trim():null)||CU.managerEmail||'';
+  const mgrEmail=(gi('mgr-email')?gi('mgr-email').value.trim():'')||CU.managerEmail||'';
   // Save manager email on user for future use
-  if(mgrEmail){const users=DB.get('users');const i=users.findIndex(u=>u.id===CU.id);if(i>=0){users[i].managerEmail=mgrEmail;DB.set('users',users);CU.managerEmail=mgrEmail;}}
+  try {
+    if(mgrEmail){const users=DB.get('users');const i=users.findIndex(u=>u.id===CU.id);if(i>=0){users[i].managerEmail=mgrEmail;DB.set('users',users);CU.managerEmail=mgrEmail;}}
+  } catch(e){ console.warn('clockIn: save mgr email failed',e); }
   closeModal();
   const now=new Date();
-  const rec={id:'a_'+Date.now(),uid:CU.id,date:td(),in:ft(now),out:null,hours:null,overtime:null,status:'present',wfh:!!wfh};
-  const arr=DB.get('attendance'); arr.push(rec); dbSet('attendance',arr);
-  lg(CU.id,CU.name,'CLOCK_IN','Clocked in at '+f12(now)+(wfh?' (WFH)':''));
+  const rec={id:'a_'+Date.now(),uid:CU.id,name:CU.name,date:td(),in:ft(now),out:null,hours:null,overtime:null,status:'present',wfh:!!wfh};
+  try {
+    const arr=DB.get('attendance'); arr.push(rec); dbSet('attendance',arr);
+    lg(CU.id,CU.name,'CLOCK_IN','Clocked in at '+f12(now)+(wfh?' (WFH)':''));
+  } catch(e){ console.error('clockIn: save attendance failed',e); }
   toast('Clocked in at '+f12(now)+(wfh?' — WFH':''),'success');
-  // Notify manager on clock-in
-  if(mgrEmail){
-    if(canSendNotif('clockIn')){
-      const _t=renderTemplate('clockIn',{employee_name:CU.name,department:CU.dept,date:td(),time:f12(now),wfh_status:wfh?'Work from Home':'Work from Office'});
+  // Notify manager — non-blocking, errors swallowed
+  try {
+    if(mgrEmail && typeof canSendNotif==='function' && canSendNotif('clockIn')){
+      const _t=renderTemplate('clockIn',{employee_name:CU.name,department:CU.dept||'',date:td(),time:f12(now),wfh_status:wfh?'Work from Home':'Work from Office'});
       sendEmail(buildToList([mgrEmail],getAdminEmails()),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
     }
-  }
-  // Late arrival check
-  const s=DB.one('settings')||{};
-  if(s.officeStart){
-    const [sh,sm]=s.officeStart.split(':').map(Number);
-    const limit=sh*60+sm+5;
-    const nowMin=now.getHours()*60+now.getMinutes();
-    if(nowMin>limit && canSendNotif('lateArrival')){
-      const _t=renderTemplate('lateArrival',{employee_name:CU.name,department:CU.dept,date:td(),time:f12(now),office_start:s.officeStart});
-      sendEmail(buildToList(getAdminEmails(),[mgrEmail].filter(Boolean)),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
+    const s=DB.one('settings')||{};
+    if(s.officeStart){
+      const [sh,sm]=s.officeStart.split(':').map(Number);
+      const limit=sh*60+sm+5;
+      const nowMin=now.getHours()*60+now.getMinutes();
+      if(nowMin>limit && canSendNotif('lateArrival')){
+        const _t=renderTemplate('lateArrival',{employee_name:CU.name,department:CU.dept||'',date:td(),time:f12(now),office_start:s.officeStart});
+        sendEmail(buildToList(getAdminEmails(),[mgrEmail].filter(Boolean)),_t.subject,emailHtml(_t.subject,templateBodyToHtml(_t.body)));
+      }
     }
-  }
+  } catch(e){ console.warn('clockIn: notification failed (non-critical)',e.message); }
   navigate('dashboard');
 }
 
