@@ -304,6 +304,22 @@ body {
     .cc-opt-dept { font-size: 11px; color: var(--text-3); }
     .cc-empty { padding: 12px 14px; font-size: 13px; color: var(--text-3); }
     
+    
+    /* ── Settings toggle switch ── */
+    .st-toggle { position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; margin-top:2px; }
+    .st-toggle input { opacity:0; width:0; height:0; position:absolute; }
+    .st-slider {
+      position:absolute; inset:0; background:var(--border);
+      border-radius:22px; cursor:pointer; transition:.2s;
+    }
+    .st-slider:before {
+      content:''; position:absolute;
+      width:16px; height:16px; left:3px; bottom:3px;
+      background:#fff; border-radius:50%; transition:.2s;
+    }
+    .st-toggle input:checked + .st-slider { background:var(--primary); }
+    .st-toggle input:checked + .st-slider:before { transform:translateX(18px); }
+    
     .lp-right {
   flex: 1;
   background: var(--surface);
@@ -1099,6 +1115,22 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
     .cc-opt-dept { font-size: 11px; color: var(--text-3); }
     .cc-empty { padding: 12px 14px; font-size: 13px; color: var(--text-3); }
     
+    
+    /* ── Settings toggle switch ── */
+    .st-toggle { position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; margin-top:2px; }
+    .st-toggle input { opacity:0; width:0; height:0; position:absolute; }
+    .st-slider {
+      position:absolute; inset:0; background:var(--border);
+      border-radius:22px; cursor:pointer; transition:.2s;
+    }
+    .st-slider:before {
+      content:''; position:absolute;
+      width:16px; height:16px; left:3px; bottom:3px;
+      background:#fff; border-radius:50%; transition:.2s;
+    }
+    .st-toggle input:checked + .st-slider { background:var(--primary); }
+    .st-toggle input:checked + .st-slider:before { transform:translateX(18px); }
+    
     .lp-right { padding: var(--s5); border-radius: 0 0 16px 16px; }
   .lp-right .headline { font-size: 18px; margin-bottom: var(--s1); }
 
@@ -1670,7 +1702,7 @@ function clockIn(wfh) {
   // Notify manager
   if(mgrEmail){
     const s=DB.one('settings')||{};
-    sendEmail([mgrEmail],`🟢 Clock-In: ${CU.name}`,emailHtml('Employee Clock-In',
+    if(canSendNotif('clockIn')){sendEmail(buildToList([mgrEmail],getAdminEmails()),emailHtml('Employee Clock-In',
       `<p><b>${CU.name}</b> has clocked in.</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <tr><td style="padding:6px 0;color:#64748B;width:120px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
@@ -1679,7 +1711,7 @@ function clockIn(wfh) {
          <tr><td style="padding:6px 0;color:#64748B">Clock-In Time</td><td style="font-weight:700;color:#10B981">${f12(now)}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Mode</td><td>${wfh?'🏠 Work From Home':'🏢 Office'}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Office Start</td><td>${s.officeStart||'09:00'}</td></tr>
-       </table>`));
+       </table>`))};
   }
   navigate('dashboard');
 }
@@ -1705,7 +1737,7 @@ function clockOut() {
   const mgrEmail=CU.managerEmail||'';
   if(mgrEmail){
     const notifyEmails=[mgrEmail,...(arr[i].overtime?getAdminEmails():[])].filter((v,i2,a)=>a.indexOf(v)===i2&&v);
-    sendEmail(notifyEmails,`🔴 Clock-Out: ${CU.name}`,emailHtml('Employee Clock-Out',
+    if(canSendNotif('clockOut')){sendEmail(buildToList(notifyEmails),emailHtml('Employee Clock-Out',
       `<p><b>${CU.name}</b> has clocked out.</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
@@ -1715,15 +1747,15 @@ function clockOut() {
          <tr><td style="padding:6px 0;color:#64748B">Clock-Out</td><td style="font-weight:700;color:#1E293B">${arr[i].out}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td><b>${arr[i].hours}h</b></td></tr>
          ${arr[i].overtime?`<tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>`:''}
-       </table>`));
+       </table>`))};
   } else if(arr[i].overtime){
-    sendEmail(getAdminEmails(),'⚡ Overtime — '+CU.name,emailHtml('Overtime Alert',
+    if(canSendNotif('clockOut')){sendEmail(buildToList(getAdminEmails()),'⚡ Overtime — '+CU.name,emailHtml('Overtime Alert',
       `<p><b>${CU.name}</b> logged overtime today.</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Total Hours</td><td>${arr[i].hours}h</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Overtime</td><td style="color:#F59E0B;font-weight:700">+${arr[i].overtime}h</td></tr>
-       </table>`));
+       </table>`))};
   }
   navigate('dashboard');
 }
@@ -1776,8 +1808,9 @@ function submitLeave(type,sd,ed,mgrEmail,reason) {
   lg(CU.id,CU.name,'LEAVE_APPLY',`Applied ${type} leave ${sd} to ${ed}`);
   addNotif('Leave Request',`${CU.name} applied ${type} leave from ${sd} to ${ed} (${days} day${days>1?'s':''}).`,'leave');
   // Email manager + admins + CC
-  const toEmails = [...new Set([...getAdminEmails(), mgrEmail, ...ccEmails])].filter(Boolean);
-  sendEmail(toEmails,`📋 Leave Request — ${CU.name}`,emailHtml('New Leave Request',
+  if (canSendNotif('leaveRequest')) {
+    const toEmails = buildToList(getAdminEmails(), [mgrEmail], ccEmails);
+    sendEmail(toEmails,`📋 Leave Request — ${CU.name}`,emailHtml('New Leave Request',
     `<p><b>${CU.name}</b> has submitted a leave request requiring your review.</p>
      <table style="width:100%;border-collapse:collapse;font-size:13px">
        <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
@@ -1789,7 +1822,8 @@ function submitLeave(type,sd,ed,mgrEmail,reason) {
        <tr><td style="padding:6px 0;color:#64748B">Reason</td><td>${reason}</td></tr>
        ${ccNames ? `<tr><td style="padding:6px 0;color:#64748B">CC</td><td>${ccNames}</td></tr>` : ''}
      </table>`,
-    'Please log in to HRMS to approve or reject this request.'));
+    'Please log in to HRMS to approve or reject this request.'))
+  };
   toast('Leave request submitted','success'); closeModal(); navigate('leaves');
 }
 
@@ -1928,14 +1962,42 @@ async function sendEmail(toEmails, subject, htmlBody) {
     });
   } catch(e) { console.warn('Email send failed:', e.message); }
 }
-function getAdminEmails() {
+
+  // ── Email config helpers ─────────────────────────────────────────────────
+  function getEmailConfig() {
+    const s = DB.one('settings') || {};
+    return s.emailConfig || {};
+  }
+  function getExtraRecipients() {
+    const ec = getEmailConfig();
+    if (!ec.extraRecipients) return [];
+    return ec.extraRecipients.split(',').map(e=>e.trim()).filter(Boolean);
+  }
+  function canSendNotif(key) {
+    // key: 'leaveRequest','leaveReview','clockIn','lateArrival','clockOut','expense','ticket'
+    const ec = getEmailConfig();
+    if (ec[key] === false) return false;
+    // clockOut defaults off
+    if (key === 'clockOut' && ec[key] !== true) return false;
+    return true;
+  }
+  function buildToList(...lists) {
+    return [...new Set([...lists.flat(), ...getExtraRecipients()])].filter(Boolean);
+  }
+
+  function getAdminEmails() {
   return DB.get('users').filter(u=>u.role==='admin'&&u.active&&u.email).map(u=>u.email);
 }
 function emailHtml(title, rows, footer) {
+  const s=DB.one('settings')||{};
+  const ec=s.emailConfig||{};
+  const hdrColor=ec.headerColor||'#1E293B';
+  const orgName=s.orgName||'Zenex Partners';
+  const ftText=footer||(ec.footerText?ec.footerText+' · HRMS':'Zenex Partners HRMS');
   return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-    <div style="background:#1E293B;padding:20px 24px;border-radius:8px 8px 0 0">
-      <h2 style="color:#fff;margin:0;font-size:18px">Zenex Partners HRMS</h2>
-      <p style="color:#94A3B8;margin:4px 0 0;font-size:13px">${title}</p>
+    <div style="background:${hdrColor};padding:20px 24px;border-radius:8px 8px 0 0">
+      <h2 style="color:#fff;margin:0;font-size:18px">${esc(orgName)} HRMS</h2>
+      <p style="color:rgba(255,255,255,.65);margin:4px 0 0;font-size:13px">${title}</p>
     </div>
     <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none">
       ${rows}
@@ -2128,7 +2190,7 @@ function trySendDailySummary() {
       <tbody>${rows}</tbody></table>`:'<p style="color:#94A3B8">No attendance recorded yet today.</p>'}`,
     `Summary generated at ${new Date().toLocaleTimeString()} on ${td()}`);
   addNotif('Daily Summary',`Today: ${present} office, ${wfh} WFH, ${late} late, ${absent} absent.`,'summary');
-  sendEmail(getAdminEmails(),`📊 Daily Attendance Summary — ${td()}`,summary);
+  if(canSendNotif('clockIn')){sendEmail(buildToList(getAdminEmails()),`📊 Daily Attendance Summary — ${td()}`,summary);}
 }
 
 function buildNav() {
@@ -3095,12 +3157,30 @@ function resetAllBalances(){
 }
 
 function pgSettings(){
-  const s=DB.one('settings')||{officeStart:'09:00',officeEnd:'18:00',orgName:'Zenex Partners'};
-  gi('page-body').innerHTML=`<div style="max-width:520px">
+  const s=DB.one('settings')||{};
+  const ec=s.emailConfig||{};
+  const tog=(id,val,label,desc)=>`
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:500;color:var(--text)">${label}</div>
+        ${desc?`<div style="font-size:11px;color:var(--text-3);margin-top:2px">${desc}</div>`:''}
+      </div>
+      <label class="st-toggle">
+        <input type="checkbox" id="${id}" ${val!==false?'checked':''}>
+        <span class="st-slider"></span>
+      </label>
+    </div>`;
+  gi('page-body').innerHTML=`<div style="max-width:620px">
+
+    <!-- Organisation -->
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><span class="card-title">Organisation</span></div>
-      <div class="card-body"><div class="fg"><label>Organisation Name</label><input id="st-org" type="text" value="${esc(s.orgName||'Zenex Partners')}"></div></div>
+      <div class="card-body">
+        <div class="fg"><label>Organisation Name</label><input id="st-org" type="text" value="${esc(s.orgName||'Zenex Partners')}"></div>
+      </div>
     </div>
+
+    <!-- Office Hours -->
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><span class="card-title">Office Hours</span></div>
       <div class="card-body">
@@ -3111,6 +3191,72 @@ function pgSettings(){
         </div>
       </div>
     </div>
+
+    <!-- Email Configuration -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">Email Notifications</span>
+        <span style="font-size:11px;color:var(--text-3);font-weight:400">Sent via Microsoft 365 (requires MS sign-in)</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Notification toggles -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Notification Events</div>
+          ${tog('ec-leave-req', ec.leaveRequest!==false, 'Leave Request Submitted', 'Email manager, admins and CC recipients when an employee submits a leave request')}
+          ${tog('ec-leave-rev', ec.leaveReview!==false, 'Leave Approved / Rejected', 'Email the employee when their leave request is reviewed')}
+          ${tog('ec-clockin',   ec.clockIn!==false,     'Clock-In Notification', 'Email admins when an employee clocks in')}
+          ${tog('ec-late',      ec.lateArrival!==false, 'Late Arrival Alert', 'Email admins when an employee clocks in after office start time')}
+          ${tog('ec-clockout',  ec.clockOut===true,     'Clock-Out Notification', 'Email admins when an employee clocks out (off by default)')}
+          ${tog('ec-expense',   ec.expense!==false,     'Expense Submitted', 'Email admins when an employee submits an expense claim')}
+          ${tog('ec-ticket',    ec.ticket!==false,      'Support Ticket Raised', 'Email admins when a support ticket is submitted')}
+        </div>
+
+        <!-- Extra recipients -->
+        <div class="fg" style="margin-bottom:16px">
+          <label>Always CC (additional recipients)</label>
+          <input id="ec-extra" type="text" placeholder="hr@company.com, manager@company.com" value="${esc(ec.extraRecipients||'')}">
+          <span style="font-size:11px;color:var(--text-3)">Comma-separated. These addresses receive every notification email.</span>
+        </div>
+
+        <!-- Reply-To -->
+        <div class="fg" style="margin-bottom:16px">
+          <label>Reply-To Address <span style="font-size:11px;color:var(--text-3);font-weight:400">(optional)</span></label>
+          <input id="ec-replyto" type="email" placeholder="hr@zenexpartners.com" value="${esc(ec.replyTo||'')}">
+        </div>
+
+        <!-- Email branding -->
+        <div style="margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Email Branding</div>
+          <div class="grid-2">
+            <div class="fg">
+              <label>Header Colour</label>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input id="ec-color" type="color" value="${ec.headerColor||'#1E293B'}" style="width:44px;height:36px;padding:2px;border-radius:8px;border:1px solid var(--border);cursor:pointer">
+                <input id="ec-color-hex" type="text" value="${ec.headerColor||'#1E293B'}" style="flex:1" placeholder="#1E293B" oninput="document.getElementById('ec-color').value=this.value">
+              </div>
+            </div>
+            <div class="fg">
+              <label>Email Footer Text</label>
+              <input id="ec-footer" type="text" placeholder="Zenex Partners HR Team" value="${esc(ec.footerText||'')}">
+            </div>
+          </div>
+        </div>
+
+        <!-- Test email -->
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px">
+          <div class="fg" style="flex:1;margin:0">
+            <input id="ec-test-addr" type="email" placeholder="Send test email to…">
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="sendTestEmail()" style="flex-shrink:0;white-space:nowrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send Test
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Management -->
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><span class="card-title">Data Management</span></div>
       <div class="card-body">
@@ -3122,10 +3268,49 @@ function pgSettings(){
         </div>
       </div>
     </div>
+
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
   </div>`;
+  // Sync color picker ↔ hex input
+  gi('ec-color').addEventListener('input', function(){ gi('ec-color-hex').value=this.value; });
 }
-function saveSettings(){DB.setOne('settings',{orgName:gi('st-org').value,officeStart:gi('st-s').value,officeEnd:gi('st-e').value});toast('Settings saved','success');}
+
+function saveSettings(){
+  const ec = {
+    leaveRequest:  gi('ec-leave-req').checked,
+    leaveReview:   gi('ec-leave-rev').checked,
+    clockIn:       gi('ec-clockin').checked,
+    lateArrival:   gi('ec-late').checked,
+    clockOut:      gi('ec-clockout').checked,
+    expense:       gi('ec-expense').checked,
+    ticket:        gi('ec-ticket').checked,
+    extraRecipients: gi('ec-extra').value.trim(),
+    replyTo:         gi('ec-replyto').value.trim(),
+    headerColor:     gi('ec-color-hex').value.trim()||gi('ec-color').value,
+    footerText:      gi('ec-footer').value.trim(),
+  };
+  DB.setOne('settings',{
+    orgName:     gi('st-org').value,
+    officeStart: gi('st-s').value,
+    officeEnd:   gi('st-e').value,
+    emailConfig: ec
+  });
+  toast('Settings saved','success');
+}
+
+function sendTestEmail(){
+  const addr = gi('ec-test-addr').value.trim();
+  if(!addr) return toast('Enter a test email address','error');
+  const s = DB.one('settings')||{};
+  const ec = s.emailConfig||{};
+  sendEmail([addr], '✅ Test Email — Zenex HRMS', emailHtml(
+    'Email Configuration Test',
+    `<p>This is a test email from <b>${esc(s.orgName||'Zenex Partners')} HRMS</b>.</p>
+     <p style="color:#64748B;font-size:13px">If you received this, your email notifications are configured correctly.</p>`,
+    ec.footerText||'Zenex Partners HR Team'
+  ));
+  toast('Test email sent (check your inbox)','success');
+}
 function clearAllData(){if(!confirm('Delete ALL data? This cannot be undone.'))return;['attendance','breaks','leaves','logs','documents','announcements','leaveBalances'].forEach(k=>DB.set(k,[]));localStorage.removeItem('zp_v4');toast('All data cleared','info');navigate('dashboard');}
 
 // Patch pgLeaves to prepend balance cards
@@ -3142,7 +3327,7 @@ function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{
     const msg=`${CU.name} clocked in at ${arr[i].in} (office start: ${s.officeStart||'09:00'}) on ${td()}`;
     addNotif('Late Clock-in',msg,'late');
     const emails=getAdminEmails();
-    sendEmail(emails,'⏰ Late Arrival — '+CU.name,emailHtml('Late Arrival Alert',
+    if(canSendNotif('lateArrival')) { sendEmail(buildToList(emails),'⏰ Late Arrival — '+CU.name,emailHtml('Late Arrival Alert',
       `<p><b>${CU.name}</b> (${CU.dept}) clocked in late.</p>
        <table style="width:100%;border-collapse:collapse;font-size:13px">
          <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
@@ -3150,7 +3335,7 @@ function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{
          <tr><td style="padding:6px 0;color:#64748B">Clock-in Time</td><td style="color:#1E293B;font-weight:700">${arr[i].in}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Office Start</td><td>${s.officeStart||'09:00'}</td></tr>
          <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
-       </table>`));
+       </table>`)) };
   }
 },300);}
 
