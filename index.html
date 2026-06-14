@@ -2095,10 +2095,24 @@ document.addEventListener('click',e=>{
 // ════════════════════════════════════════════
 // EMAIL NOTIFICATIONS (Microsoft Graph)
 // ════════════════════════════════════════════
+async function getMsMailToken() {
+  if (!_msalInstance) return null;
+  const accounts = _msalInstance.getAllAccounts();
+  if (!accounts.length) return null;
+  const scopes = ['https://graph.microsoft.com/Mail.Send'];
+  try {
+    const r = await _msalInstance.acquireTokenSilent({ scopes, account: accounts[0] });
+    return r.accessToken;
+  } catch(e) {
+    try { const r = await _msalInstance.acquireTokenPopup({ scopes }); return r.accessToken; }
+    catch(e2) { return null; }
+  }
+}
+
 async function sendEmail(toEmails, subject, htmlBody) {
   if (!_msalInstance || !toEmails || !toEmails.length) return;
   try {
-    const token = await SP.token();
+    const token = await getMsMailToken();
     const msg = {
       message: {
         subject,
