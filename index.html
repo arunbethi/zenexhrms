@@ -4083,28 +4083,7 @@ function clearAllData(){if(!confirm('Delete ALL data? This cannot be undone.'))r
 // Patch pgLeaves to prepend balance cards
 // pgLeaves now fully handles balance cards inline
 
-// Patch clockIn — late detection + notifications
-const _clockInOrig=clockIn;
-function clockIn(wfh){_clockInOrig(wfh);setTimeout(()=>{
-  const arr=DB.get('attendance');
-  const i=arr.findIndex(r=>r.uid===CU.id&&r.date===td());
-  if(i>=0&&!arr[i].late&&isLate(arr[i].in)){
-    arr[i].late=true;dbSet('attendance',arr);
-    const s=DB.one('settings')||{};
-    const msg=`${CU.name} clocked in at ${arr[i].in} (office start: ${s.officeStart||'09:00'}) on ${td()}`;
-    addNotif('Late Clock-in',msg,'late');
-    const emails=getAdminEmails();
-    if(canSendNotif('lateArrival')) { sendEmail(buildToList(emails),'⏰ Late Arrival — '+CU.name,emailHtml('Late Arrival Alert',
-      `<p><b>${CU.name}</b> (${CU.dept}) clocked in late.</p>
-       <table style="width:100%;border-collapse:collapse;font-size:13px">
-         <tr><td style="padding:6px 0;color:#64748B;width:140px">Employee</td><td style="font-weight:600">${CU.name}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Department</td><td>${CU.dept}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Clock-in Time</td><td style="color:#1E293B;font-weight:700">${arr[i].in}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Office Start</td><td>${s.officeStart||'09:00'}</td></tr>
-         <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
-       </table>`)) };
-  }
-},300);}
+// clockIn is fully implemented above — no patch needed
 
 
 // ════════════════════════════════════════════
