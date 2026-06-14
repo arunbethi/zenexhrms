@@ -1762,11 +1762,25 @@ function doLogin() {
 function doLogout() {
   if (!CU) return;
   lg(CU.id,CU.name,'LOGOUT','Logged out');
-  DB.setOne('session',null); CU=null;
+  DB.setOne('session',null); CU=null; _msalInstance=null;
   gi('app').style.display='none';
   gi('login-page').style.display='flex';
   gi('li-user').value=''; gi('li-pass').value='';
 }
+
+function toggleProfileMenu(e) {
+  if (e) e.stopPropagation();
+  const m = gi('tb-profile-menu');
+  if (m) m.classList.toggle('open');
+}
+function closeProfileMenu() {
+  const m = gi('tb-profile-menu');
+  if (m) m.classList.remove('open');
+}
+document.addEventListener('click', function(e) {
+  const wrap = gi('tb-profile-wrap');
+  if (wrap && !wrap.contains(e.target)) closeProfileMenu();
+});
 
 function restore() {
   const sid=DB.one('session');
@@ -3510,7 +3524,7 @@ function pgSettings(){
         <p style="font-size:12px;color:var(--text-3);margin-bottom:16px">
           Use placeholders like <code style="background:var(--primary-l);padding:1px 6px;border-radius:4px;font-size:11px">{{employee_name}}</code> — they are replaced with real values when the email is sent.
         </p>
-        <div id="et-container">\${renderTemplateEditor()}</div>
+        <div id="et-container">${renderTemplateEditor()}</div>
       </div>
     </div>
 
