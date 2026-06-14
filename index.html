@@ -1934,7 +1934,14 @@ async function restore() {
       spLoading(false);
     } catch(e) { spLoading(false); }
   }
-  if (user) { CU = user; curPage = 'dashboard'; showApp(); }
+  if (user) {
+    CU = user; curPage = 'dashboard';
+    // Reinit MSAL so email sending works after a page refresh
+    if (user.msAccount && typeof msal !== 'undefined') {
+      getMsalInstance().catch(() => {});
+    }
+    showApp();
+  }
   else { DB.setOne('session', null); } // Stale session — clear it
 }
 
@@ -2130,9 +2137,15 @@ async function getMsMailToken() {
 }
 
 async function sendEmail(toEmails, subject, htmlBody) {
-  if (!_msalInstance || !toEmails || !toEmails.length) return;
+  if (!toEmails || !toEmails.length) return;
+  if (!_msalInstance) {
+    // MSAL not ready — try to reinit once
+    try { await getMsalInstance(); } catch(_) {}
+    if (!_msalInstance) { console.warn('sendEmail: MSAL not initialized, skipping'); return; }
+  }
   try {
     const token = await getMsMailToken();
+    if (!token) { console.warn('sendEmail: no mail token obtained, skipping'); return; }
     const msg = {
       message: {
         subject,
@@ -2141,11 +2154,15 @@ async function sendEmail(toEmails, subject, htmlBody) {
       },
       saveToSentItems: false
     };
-    await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
       body: JSON.stringify(msg)
     });
-  } catch(e) { console.warn('Email send failed:', e.message); }
+    if (!res.ok) {
+      const err = await res.text().catch(()=>'');
+      console.warn('sendEmail: Graph API error', res.status, err);
+    }
+  } catch(e) { console.warn('sendEmail failed:', e.message); }
 }
 
   // ── Email config helpers ─────────────────────────────────────────────────
