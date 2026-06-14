@@ -4318,16 +4318,22 @@ function pgMyTimesheets(){
 // ════════════════════════════════════════════
 function pgHolidays(){
   const yr=new Date().getFullYear();
-  const hols=DB.get('holidays').filter(h=>h.date&&h.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
-  let html='';
-  if(CU.role==='admin') html+=`<div class="sec-hdr"><button class="btn btn-primary btn-sm" onclick="openAddHoliday()">+ Add Holiday</button></div>`;
+  const mo=window._holMonth||'';
+  let hols=DB.get('holidays').filter(h=>h.date&&h.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
+  if(mo) hols=hols.filter(h=>h.date&&h.date.slice(5,7)===mo);
+  const months=[['','All Months'],['01','January'],['02','February'],['03','March'],['04','April'],['05','May'],['06','June'],['07','July'],['08','August'],['09','September'],['10','October'],['11','November'],['12','December']];
+  const mOpts=months.map(([v,l])=>`<option value="${v}"${mo===v?' selected':''}>${l}</option>`).join('');
+  let html=`<div class="sec-hdr" style="gap:8px">
+    <select style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text-1)" onchange="window._holMonth=this.value;pgHolidays()">${mOpts}</select>
+    ${CU.role==='admin'?`<button class="btn btn-primary btn-sm" onclick="openAddHoliday()">+ Add Holiday</button>`:''}
+  </div>`;
   const rows=hols.map(h=>{
     const dt2=new Date(h.date+'T12:00:00'); const past=dt2<new Date();
     return`<tr style="${past?'opacity:.5':''}"><td><b>${esc(h.name)}</b></td><td>${fdate(h.date)}</td><td>${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt2.getDay()]}</td>
     <td><span class="badge ${h.type==='national'?'br':'bo'}">${h.type}</span></td>
     ${CU.role==='admin'?`<td><button class="btn btn-ghost btn-sm" onclick="delHoliday('${h.id}')">Del</button></td>`:''}`;
   });
-  html+=tbl(CU.role==='admin'?['Name','Date','Day','Type','']:['Name','Date','Day','Type'],rows,'No holidays configured');
+  html+=tbl(CU.role==='admin'?['Name','Date','Day','Type','']:['Name','Date','Day','Type'],rows,'No holidays for this month');
   gi('page-body').innerHTML=html;
 }
 function openAddHoliday(){
@@ -4344,8 +4350,10 @@ function doAddHoliday(){
 }
 function delHoliday(id){
   if(!confirm('Remove this holiday?')) return;
-  const updated = DB.get('holidays').filter(h=>h.id!==id);
-  dbSet('holidays', updated);
+  const rec=DB.get('holidays').find(h=>h.id===id);
+  if(!rec) return toast('Holiday not found','error');
+  dbRemove('holidays',rec);
+  toast('Holiday removed','success');
   navigate('holidays');
 }
 
