@@ -1621,7 +1621,7 @@ const SB_REVERSE = {
   zp_users:'users', zp_attendance:'attendance', zp_breaks:'breaks',
   zp_leaves:'leaves', zp_announcements:'announcements', zp_logs:'logs',
   zp_notifications:'notifications', zp_email_templates:'email_templates',
-  zp_documents:'documents'
+  zp_documents:'documents', zp_holidays:'holidays'
 };
 
 function sbInitClient() {
@@ -1727,7 +1727,8 @@ const SB_MAP = {
   logs: 'zp_logs',
   notifications: 'zp_notifications',
   email_templates: 'zp_email_templates',
-  documents: 'zp_documents'
+  documents: 'zp_documents',
+  holidays: 'zp_holidays'
 };
 
 // Write-through: save to localStorage AND push to Supabase (non-blocking)
