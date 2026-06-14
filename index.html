@@ -1496,12 +1496,12 @@ async function msLogin() {
     let result;
     if (accounts.length > 0) {
       try {
-        result = await instance.acquireTokenSilent({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'], account: accounts[0] });
+        result = await instance.acquireTokenSilent({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'], account: accounts[0] });
       } catch(_) {
-        result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'] });
+        result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'] });
       }
     } else {
-      result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'] });
+      result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'] });
     }
 
     const user = msLoginUser(result.account);
@@ -1540,7 +1540,7 @@ const SP = {
   siteId: null,
   listIds: {},
   GRAPH: 'https://graph.microsoft.com/v1.0',
-  SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'],
+  SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'],
   LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs','ZP_Notifications','ZP_EmailTemplates'],
 
   async token() {
