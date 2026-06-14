@@ -1421,7 +1421,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
 // MICROSOFT AUTHENTICATION (MSAL)
 // ════════════════════════════════════════════
 // MSAL v2 — singleton with proper initialization (v2.28+ requires initialize())
-const MS_CLIENT_ID = '1670634a-ddcc-45ff-bc6f-13ca008acf59';
+const MS_CLIENT_ID = '0528f28d-08f8-4279-b125-74eb28e95a8d';
 const MS_TENANT_ID = 'ca04e4b7-c63a-403a-afd4-aaa06cd927f0';
 
 // Singleton instance + initialization promise (prevents interaction_in_progress errors)
@@ -1541,7 +1541,7 @@ const SP = {
   listIds: {},
   GRAPH: 'https://graph.microsoft.com/v1.0',
   SCOPES: ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Mail.Send'],
-  LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs'],
+  LISTS: ['ZP_Users','ZP_Attendance','ZP_Breaks','ZP_Leaves','ZP_Announcements','ZP_Logs','ZP_Notifications','ZP_EmailTemplates'],
 
   async token() {
     if (!_msalInstance) return null;
@@ -1573,7 +1573,7 @@ const SP = {
 
   async init() {
     spMsg('Getting SharePoint site…');
-    const site = await this.req('GET', '/sites/zenexpartners.sharepoint.com:/');
+    const site = await this.req('GET', '/sites/zenexpartners.sharepoint.com:/sites/HRPortal');
     if (!site) return false;
     this.siteId = site.id;
 
@@ -1628,7 +1628,7 @@ const SP = {
 };
 
 // DB key → SP list name
-const SP_MAP = { users:'ZP_Users', attendance:'ZP_Attendance', breaks:'ZP_Breaks', leaves:'ZP_Leaves', announcements:'ZP_Announcements', logs:'ZP_Logs' };
+const SP_MAP = { users:'ZP_Users', attendance:'ZP_Attendance', breaks:'ZP_Breaks', leaves:'ZP_Leaves', announcements:'ZP_Announcements', logs:'ZP_Logs', notifications:'ZP_Notifications', email_templates:'ZP_EmailTemplates' };
 
 // Write-through: save to localStorage AND push to SP (non-blocking)
 function dbSet(key, value) {
