@@ -1607,6 +1607,11 @@ const SP = {
         console.log('List exists:', name, this.listIds[name]);
       }
     }
+    // Ensure readable columns exist on all lists
+    spMsg('Setting up columns…');
+    for (const name of this.LISTS) {
+      if (this.listIds[name]) await this.ensureColumns(name);
+    }
     return true;
   },
 
@@ -1624,20 +1629,64 @@ const SP = {
     return items;
   },
 
+  // upsert defined below in extended SP block
+
+
+  async remove(listName, spId) {
+    if (!this.siteId || !this.listIds[listName] || !spId) return;
+    await this.req('DELETE', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${spId}`);
+  },
+
+  // Proper column schemas per list
+  COLUMNS: {
+    'ZP_Users':         [{name:'EmployeeID',text:{}},{name:'FullName',text:{}},{name:'Username',text:{}},{name:'Role',text:{}},{name:'Department',text:{}},{name:'Position',text:{}},{name:'WorkEmail',text:{}},{name:'Phone',text:{}},{name:'JoinDate',text:{}},{name:'Status',text:{}}],
+    'ZP_Attendance':    [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'WorkDate',text:{}},{name:'ClockIn',text:{}},{name:'ClockOut',text:{}},{name:'HoursWorked',number:{decimalPlaces:'two'}},{name:'LateArrival',text:{}},{name:'Overtime',number:{decimalPlaces:'two'}}],
+    'ZP_Leaves':        [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'LeaveType',text:{}},{name:'FromDate',text:{}},{name:'ToDate',text:{}},{name:'Days',number:{}},{name:'Reason',text:{allowMultipleLines:true}},{name:'Status',text:{}},{name:'ApprovedBy',text:{}}],
+    'ZP_Breaks':        [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'BreakDate',text:{}},{name:'StartTime',text:{}},{name:'EndTime',text:{}},{name:'DurationMins',number:{}}],
+    'ZP_Logs':          [{name:'EmployeeID',text:{}},{name:'EmployeeName',text:{}},{name:'Action',text:{}},{name:'Detail',text:{allowMultipleLines:true}},{name:'Timestamp',text:{}}],
+    'ZP_Announcements': [{name:'Body',text:{allowMultipleLines:true}},{name:'AuthorName',text:{}},{name:'PostedAt',text:{}}],
+    'ZP_Notifications': [{name:'EmployeeID',text:{}},{name:'Message',text:{allowMultipleLines:true}},{name:'NotifType',text:{}},{name:'IsRead',text:{}},{name:'Timestamp',text:{}}],
+    'ZP_EmailTemplates':[{name:'TemplateKey',text:{}},{name:'Subject',text:{}},{name:'Body',text:{allowMultipleLines:true}}]
+  },
+
+  // Ensure proper readable columns exist on each list (adds missing ones)
+  async ensureColumns(listName) {
+    const listId = this.listIds[listName];
+    if (!listId || !this.COLUMNS[listName]) return;
+    const existing = await this.req('GET', `/sites/${this.siteId}/lists/${listId}/columns?$select=name&$top=100`);
+    const existingNames = existing ? existing.value.map(c=>c.name) : [];
+    for (const col of this.COLUMNS[listName]) {
+      if (!existingNames.includes(col.name)) {
+        await this.req('POST', `/sites/${this.siteId}/lists/${listId}/columns`, col);
+      }
+    }
+  },
+
+  // Map a record to readable SP field values
+  readableFields(listName, r) {
+    const uname = (uid) => { try { const u=(DB.get('users')||[]).find(u=>u.id===uid); return u?u.name:''; } catch(e){return '';} };
+    switch(listName) {
+      case 'ZP_Users': return { EmployeeID:r.id||'', FullName:r.name||'', Username:r.username||'', Role:r.role||'', Department:r.dept||'', Position:r.position||'', WorkEmail:r.email||'', Phone:r.phone||'', JoinDate:r.join||'', Status:r.active===false?'Inactive':'Active' };
+      case 'ZP_Attendance': return { EmployeeID:r.uid||'', EmployeeName:r.name||uname(r.uid), WorkDate:r.date||'', ClockIn:r.in||'', ClockOut:r.out||'', HoursWorked:r.hours||0, LateArrival:r.late?'Yes':'No', Overtime:r.overtime||0 };
+      case 'ZP_Leaves': return { EmployeeID:r.uid||'', EmployeeName:r.name||uname(r.uid), LeaveType:r.type||'', FromDate:r.from||'', ToDate:r.to||'', Days:r.days||0, Reason:r.reason||'', Status:r.status||'pending', ApprovedBy:r.approvedBy||'' };
+      case 'ZP_Breaks': return { EmployeeID:r.uid||'', EmployeeName:uname(r.uid), BreakDate:r.date||'', StartTime:r.start||'', EndTime:r.end||'', DurationMins:r.min||0 };
+      case 'ZP_Logs': return { EmployeeID:r.uid||'', EmployeeName:r.name||'', Action:r.action||'', Detail:r.detail||'', Timestamp:r.ts||'' };
+      case 'ZP_Announcements': return { Body:r.msg||'', AuthorName:r.authorName||'', PostedAt:r.ts||'' };
+      case 'ZP_Notifications': return { EmployeeID:r.uid||'', Message:r.msg||'', NotifType:r.type||'', IsRead:r.read?'Yes':'No', Timestamp:r.ts||'' };
+      case 'ZP_EmailTemplates': return { TemplateKey:r.key||r.id||'', Subject:r.subject||'', Body:r.body||'' };
+      default: return {};
+    }
+  },
+
   async upsert(listName, record) {
     if (!this.siteId || !this.listIds[listName] || !record || !record.id) return;
-    const fields = { Title: String(record.id), RecordData: JSON.stringify(record) };
+    const fields = { Title: String(record.id), RecordData: JSON.stringify(record), ...this.readableFields(listName, record) };
     if (record._spId) {
       await this.req('PATCH', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${record._spId}/fields`, fields);
     } else {
       const result = await this.req('POST', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items`, { fields });
       if (result) { record._spId = result.id || result.fields?.id; }
     }
-  },
-
-  async remove(listName, spId) {
-    if (!this.siteId || !this.listIds[listName] || !spId) return;
-    await this.req('DELETE', `/sites/${this.siteId}/lists/${this.listIds[listName]}/items/${spId}`);
   }
 };
 
