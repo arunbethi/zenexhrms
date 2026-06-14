@@ -91,7 +91,7 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg,#F1F5F9 0%,#F1F5F9 60%,#EFF6FF 100%);
+  background: #e8ecf0;
 }
 .login-wrap {
   display: flex;
@@ -105,7 +105,7 @@ body {
 .lp-left {
   width: 360px;
   flex-shrink: 0;
-  background: linear-gradient(160deg,#F8FAFC 0%,#EFF2F7 100%);
+  background: #ffffff;
   padding: var(--s10) var(--s8);
   display: flex;
   flex-direction: column;
@@ -113,22 +113,7 @@ body {
   position: relative;
   overflow: hidden;
 }
-.lp-left::before {
-  content: '';
-  position: absolute;
-  top: -80px; right: -80px;
-  width: 260px; height: 260px;
-  border-radius: 50%;
-  background: rgba(255,255,255,.08);
-}
-.lp-left::after {
-  content: '';
-  position: absolute;
-  bottom: -60px; left: -60px;
-  width: 200px; height: 200px;
-  border-radius: 50%;
-  background: rgba(255,255,255,.06);
-}
+.lp-left::before,.lp-left::after { display: none; }
 .lp-tagline { margin-top: auto; }
 .lp-tagline h3 {
   font-size: 15px; font-weight: 700;
@@ -206,6 +191,13 @@ body {
     }
     .tb-date-lbl { font-size: 11px; color: var(--text-3); }
     @media (max-width: 480px) { .tb-datetime { display: none; } }
+    @media (max-width: 480px) {
+      .topbar-title { font-size: 13px; max-width: 120px; }
+      .page-body { padding: 10px; }
+      .card { padding: var(--s3); }
+      table { min-width: 420px; }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
 
     /* ── Topbar profile avatar + dropdown ── */
     .tb-profile { position: relative; }
@@ -366,7 +358,7 @@ body {
     
     .lp-right {
   flex: 1;
-  background: var(--surface);
+  background: #f8f9fb;
   padding: var(--s10) var(--s10);
   display: flex;
   flex-direction: column;
@@ -512,10 +504,10 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 .sidebar.collapsed { width: 84px; }
 
 /* Logo: hide full SVG, show Z mark */
-.sb-logo-full { display: flex; align-items: center; min-width: 0; }
+.sb-logo-full { display: flex; align-items: center; min-width: 0; flex: 1; }
       .sidebar.collapsed .sb-logo-full { display: none !important; }
-.sb-logo-z { display: none; }
-.sidebar.collapsed .sb-logo-z { display: none !important; }
+.sb-logo-z { display: none; flex: 1; font-size: 20px; font-weight: 800; color: var(--primary); }
+.sidebar.collapsed .sb-logo-z { display: flex !important; align-items: center; }
 
 /* User: show only avatar, centered */
 .sidebar.collapsed .sb-user { padding: 10px 0; justify-content: center; }
@@ -576,11 +568,12 @@ input[type="month"]::-webkit-calendar-picker-indicator {
 .sidebar::-webkit-scrollbar { display: none; }
     .sidebar { -ms-overflow-style: none; }
 .sb-logo {
-  padding: 14px 16px 12px;
+  padding: 10px 12px 10px 16px;
   border-bottom: 1px solid var(--border);
   min-height: 66px;
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 .sb-user {
   padding: var(--s3) var(--s4);
@@ -872,38 +865,30 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
    MOBILE RESPONSIVE  (≤768px)
    ═══════════════════════════════════════════ */
 
-/* Hamburger toggle – hidden on desktop */
+/* Topbar hamburger – shown only on mobile (to open closed sidebar) */
 .mob-toggle {
-  display: flex;
+  display: none; /* hidden by default; shown on mobile via @media below */
   align-items: center; justify-content: center;
   width: 36px; height: 36px; border-radius: 8px;
   background: var(--muted); border: 1px solid var(--border);
   cursor: pointer; flex-shrink: 0;
   transition: background .15s;
 }
-    /* Inner sidebar hamburger (visible only when collapsed) */
-    .sb-inner-ham {
-      display: none;
-      align-items: center; justify-content: center;
-      width: 40px; height: 40px;
-      background: none; border: none; cursor: pointer;
-      border-radius: 8px;
-      color: var(--text-3);
-      flex-shrink: 0;
-    }
-    .sb-inner-ham:hover { background: var(--sidebar-hover); color: var(--text); }
-    body.sb-collapsed .sb-inner-ham { display: flex; }
-    /* Topbar hamburger: hide when collapsed on desktop */
-    @media (min-width: 769px) {
-      body.sb-collapsed .mob-toggle { display: none; }
-    /* When mobile sidebar is open: show × inside sidebar, hide topbar hamburger */
-    #sidebar.mob-open .sb-mob-close { display: flex !important; align-items: center; justify-content: center; }
-    #sidebar.mob-open ~ .main .mob-toggle { display: none !important; }
-    /* On desktop always hide the mobile close button */
-    @media (min-width: 769px) { .sb-mob-close { display: none !important; } }
-    }
 .mob-toggle:hover { background: var(--primary); color: #fff; }
 .mob-toggle svg   { stroke: currentColor; }
+
+/* ── Unified sidebar toggle button ── */
+.sb-ham {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border: none;
+  background: none; cursor: pointer; border-radius: 8px;
+  color: var(--text-3); flex-shrink: 0;
+  transition: background .15s, color .15s;
+  margin-left: auto; /* push to right of logo */
+}
+.sb-ham:hover { background: var(--sidebar-hover); color: var(--text); }
+/* Collapsed: no logo so center the button */
+body.sb-collapsed .sb-ham { margin-left: 0; }
 
 /* Sidebar overlay backdrop */
 .sb-backdrop {
@@ -943,6 +928,12 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
   .sidebar.collapsed .sb-clock, .sidebar.collapsed .sb-date { display: block !important; }
   .sidebar.collapsed .sb-logout-text { display: inline !important; }
 
+  /* Show topbar hamburger on mobile (to open closed sidebar) */
+  .mob-toggle { display: flex; }
+  /* When sidebar is open on mobile: hide topbar hamburger, show × in sidebar */
+  #sidebar.mob-open ~ .main .mob-toggle { display: none !important; }
+  #sidebar.mob-open .sb-ham .sb-ham-lines { display: none; }
+  #sidebar.mob-open .sb-ham .sb-ham-close { display: block !important; }
 
   /* ── Topbar ── */
   .topbar { padding: 0 var(--s4); gap: var(--s3); }
@@ -992,6 +983,31 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
   /* ── Dashboard stats ── */
   .scard { padding: var(--s4); }
   .scard-val  { font-size: 24px; }
+
+  /* ── Tables → horizontal scroll with proper sizing ── */
+  table { min-width: 480px; }
+  th, td { padding: 8px 10px; font-size: 12px; }
+
+  /* ── Payroll / HR tables → stack actions ── */
+  .sec-hdr { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sec-hdr button { flex-shrink: 0; }
+  .page-body { padding: var(--s3); }
+
+  /* ── Form drawer → full screen on mobile ── */
+  .form-drawer { width: 100% !important; }
+  .form-drawer-body { padding: 16px; }
+  .form-drawer-hdr, .form-drawer-ftr { padding: 14px 16px; }
+  .emp-drawer { width: 100% !important; }
+
+  /* ── Topbar improvements ── */
+  .topbar { height: 50px; }
+  .topbar-title { font-size: 14px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Modal → full screen on small mobile ── */
+  .modal-box { width: calc(100vw - 24px) !important; margin: 12px; }
+
+  /* ── Button rows wrap ── */
+  .btn-row, [style*="display:flex"][style*="gap"] { flex-wrap: wrap; }
 
   /* ── Login page ── */
   #login-page { padding: var(--s4); align-items: flex-start; padding-top: 32px; background: var(--bg); }
@@ -1296,9 +1312,9 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
     <div class="lp-left">
       <!-- Logo -->
       <div style="display:flex;align-items:center;justify-content:flex-start;padding:4px 0 8px">
-        <img src="https://www.zenexpartners.net/wp-content/uploads/2026/06/Zenex_Logo.png"
+        <img src="https://www.zenexpartners.net/wp-content/uploads/2026/06/Zenex_Logo-e1781457070845.png"
              alt="Zenex Partners"
-             style="height:72px;width:auto;max-width:240px;display:block;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(0,0,0,.10))"
+             style="height:100px;width:auto;max-width:250px;display:block;object-fit:contain;filter:none"
              onerror="this.onerror=null;this.style.display='none';this.nextSibling.style.display='block'"
         >
         <span style="display:none;font-size:20px;font-weight:800;color:var(--primary)">Zenex Partners</span>
@@ -1307,7 +1323,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
       <!-- Tagline -->
       <div class="lp-tagline" style="position:relative;z-index:1">
         <h3>HR Management System</h3>
-        <p>Manage your workforce — attendance, leave, breaks, documents and more.</p>
+        <p>Everything Your Workforce Needs, All in One Platform</p>
       </div>
 
       <!-- Features -->
@@ -1316,10 +1332,11 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
         <div class="lp-feat"><div class="lp-feat-dot"></div>Break management &amp; overtime</div>
         <div class="lp-feat"><div class="lp-feat-dot"></div>Leave requests &amp; approvals</div>
         <div class="lp-feat"><div class="lp-feat-dot"></div>Monthly reports &amp; CSV export</div>
+        <div class="lp-feat"><div class="lp-feat-dot"></div>Payroll Management &amp; Holiday Calendar</div>
       </div>
 
       <!-- Attribution -->
-      <div class="lp-attribution">Designed by Arun Kumar Bethi &nbsp;·&nbsp; Exclusive for Zenex Partners</div>
+      <div class="lp-attribution">Created by Arun Kumar Bethi</div>
     </div>
     <!-- Right form panel -->
     <div class="lp-right">
@@ -1365,26 +1382,27 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); 
 
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
-    <div class="sb-logo" style="position:relative;padding:16px 16px 14px;display:flex;align-items:center">
-      <!-- Full logo (expanded) -->
-      <button class="sb-mob-close" onclick="toggleSidebar()" aria-label="Close sidebar" style="display:none;border:none;background:none;padding:6px;cursor:pointer;color:var(--text-2);border-radius:var(--r-sm);transition:background .15s;flex-shrink:0">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-      <button class="sb-inner-ham" onclick="toggleSidebar()" aria-label="Expand sidebar">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-      </button>
+    <div class="sb-logo" id="sb-logo">
+      <!-- Logo (expanded) -->
       <div class="sb-logo-full">
-        <img src="https://www.zenexpartners.net/wp-content/uploads/2026/06/Zenex_Logo.png"
+        <img src="https://www.zenexpartners.net/wp-content/uploads/2026/06/Zenex_Logo-e1781457070845.png"
              alt="Zenex Partners"
-             style="height:52px;width:auto;max-width:180px;display:block;object-fit:contain;filter:drop-shadow(0 1px 4px rgba(0,0,0,.08))"
+             style="height:80px;width:auto;max-width:100px;display:block;object-fit:contain;filter:none"
              onerror="this.onerror=null;this.style.display='none';this.nextSibling.style.display='block'"
         >
         <span style="display:none;font-size:16px;font-weight:800;color:var(--primary)">Zenex</span>
       </div>
       <!-- Z mark (collapsed) -->
       <div class="sb-logo-z">Z</div>
+      <!-- Unified toggle button — always inside the sidebar -->
+      <button class="sb-ham" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+        <svg class="sb-ham-lines" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <svg class="sb-ham-close" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="display:none">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
     </div>
     <div class="sb-user">
       <div class="avatar" id="sb-av">A</div>
@@ -5151,11 +5169,10 @@ function togglePoll(pollId) {
   const p = polls.find(x=>x.id===pollId); if(!p) return;
   p.active = !p.active;
   dbSet('polls', polls);
-  navigate('polls-admin');
+  navigate(CU.role==='admin'?'polls-admin':'polls');
 }
+function deletePoll(id){if(!confirm('Delete this poll?'))return;dbSet('polls',DB.get('polls').filter(p=>p.id!==id));navigate('polls-admin');}
 
-seed();
-restore();
 </script>
 </body>
 </html>
