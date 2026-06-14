@@ -1621,7 +1621,14 @@ const SB_REVERSE = {
   zp_users:'users', zp_attendance:'attendance', zp_breaks:'breaks',
   zp_leaves:'leaves', zp_announcements:'announcements', zp_logs:'logs',
   zp_notifications:'notifications', zp_email_templates:'email_templates',
-  zp_documents:'documents', zp_holidays:'holidays'
+  zp_documents:'documents', zp_holidays:'holidays',
+  zp_shifts:'shifts', zp_shift_assignments:'shiftAssignments',
+  zp_tickets:'tickets', zp_onboarding:'onboarding',
+  zp_expenses:'expenses', zp_compoffs:'compoffs',
+  zp_payslips:'payslips', zp_assets:'assets',
+  zp_leave_balances:'leaveBalances', zp_salary_config:'salaryConfig',
+  zp_polls:'polls', zp_recognition:'recognition',
+  zp_settings:'settings'
 };
 
 function sbInitClient() {
@@ -1728,7 +1735,19 @@ const SB_MAP = {
   notifications: 'zp_notifications',
   email_templates: 'zp_email_templates',
   documents: 'zp_documents',
-  holidays: 'zp_holidays'
+  holidays: 'zp_holidays',
+  shifts: 'zp_shifts',
+  shiftAssignments: 'zp_shift_assignments',
+  tickets: 'zp_tickets',
+  onboarding: 'zp_onboarding',
+  expenses: 'zp_expenses',
+  compoffs: 'zp_compoffs',
+  payslips: 'zp_payslips',
+  assets: 'zp_assets',
+  leaveBalances: 'zp_leave_balances',
+  salaryConfig: 'zp_salary_config',
+  polls: 'zp_polls',
+  recognition: 'zp_recognition'
 };
 
 // Write-through: save to localStorage AND push to Supabase (non-blocking)
@@ -1749,6 +1768,15 @@ function dbRemove(key, record) {
   const newArr = DB.get(key).filter(r => r.id !== record.id);
   DB.set(key, newArr);
   if (_sbReady && SB_MAP[key]) SB.remove(SB_MAP[key], record.id).catch(() => {});
+}
+
+// Write-through for singleton values (settings)
+function dbSetOne(key, value) {
+  DB.setOne(key, value);
+  if (!_sbReady) return;
+  if (key === 'settings') {
+    SB.upsert('zp_settings', { id: 'org_settings', ...value }).catch(() => {});
+  }
 }
 
 // Loading overlay helpers
@@ -1785,6 +1813,19 @@ async function spSync() {
       }
     }
   }
+
+  // Sync settings singleton (stored as one row in zp_settings)
+  try {
+    const sbSettings = await SB.getAll('zp_settings');
+    if (sbSettings && sbSettings.length > 0) {
+      DB.setOne('settings', sbSettings[0]);
+    } else {
+      const localSettings = DB.one('settings');
+      if (localSettings) {
+        await SB.upsert('zp_settings', { id: 'org_settings', ...localSettings });
+      }
+    }
+  } catch(e) { console.warn('spSync: settings sync failed', e); }
 
   // Always ensure demo/admin seed users exist in Supabase
   const sbUsers = await SB.getAll('zp_users');
@@ -1859,7 +1900,7 @@ function seed() {
       {id:'hol5',name:'Diwali',date:yr+'-10-20',type:'festival'},
       {id:'hol6',name:'Christmas Day',date:yr+'-12-25',type:'national'},
     ]);
-    if(!DB.get('shifts').length) DB.set('shifts',[
+    if(!DB.get('shifts').length) dbSet('shifts',[
       {id:'sh1',name:'General',start:'09:00',end:'18:00',days:[1,2,3,4,5]},
       {id:'sh2',name:'Morning',start:'07:00',end:'15:00',days:[1,2,3,4,5,6]},
       {id:'sh3',name:'Evening',start:'14:00',end:'22:00',days:[1,2,3,4,5,6]},
@@ -1874,8 +1915,8 @@ function ensureBalances(){
   const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
   let bal=DB.get('leaveBalances'); let changed=false;
   users.forEach(u=>{ if(!bal.find(b=>b.uid===u.id&&b.year===yr)){bal.push({id:'bal_'+u.id+'_'+yr,uid:u.id,year:yr,annual:20,sick:10,casual:7,emergency:3});changed=true;}});
-  if(changed) DB.set('leaveBalances',bal);
-  if(!DB.one('settings')) DB.setOne('settings',{officeStart:'09:00',officeEnd:'18:00',orgName:'Zenex Partners'});
+  if(changed) dbSet('leaveBalances',bal);
+  if(!DB.one('settings')) dbSetOne('settings',{officeStart:'09:00',officeEnd:'18:00',orgName:'Zenex Partners'});
 }
 
 // ════════════════════════════════════════════
@@ -2649,14 +2690,14 @@ function saveEmp(data, eid) {
     const i = users.findIndex(u => u.id === eid);
     if (i < 0) return toast('Employee not found','error');
     users[i] = { ...users[i], ...data };
-    DB.set('users', users);
+    dbSet('users', users);
     lg(CU.id, CU.name, 'EDIT_EMP', 'Updated employee: ' + data.name);
     toast('Employee updated', 'success');
   } else {
     if (users.find(u => u.username === data.username)) return toast('Username already taken','error');
     const emp = { id:'u_'+Date.now(), ...data, active: true, join: data.join || td() };
     users.push(emp);
-    DB.set('users', users);
+    dbSet('users', users);
     lg(CU.id, CU.name, 'ADD_EMP', 'Added employee: ' + data.name);
     toast('Employee added', 'success');
   }
@@ -3089,6 +3130,7 @@ function buildEmpDrawerBody(u) {
         <div class="fg"><label>Manager Email</label><input id="ef-mgr" type="email" placeholder="manager@zenexpartners.net" value="${esc(u?u.managerEmail:'')}"></div>
       </div>
       <div class="fg"><label>Time Zone</label><select id="ef-tz"><option value="">— Select time zone —</option>${tzOptions(u?u.tz:'')}</select></div>
+      <div class="fg"><label>Shift</label><select id="ef-shift"><option value="">— No shift assigned —</option>${DB.get('shifts').map(s=>`<option value="${s.id}" ${u&&u.shift===s.id?'selected':''}>${esc(s.name)} (${s.start}–${s.end})</option>`).join('')}</select></div>
     </div>
 
     <div class="form-section">
@@ -3147,7 +3189,7 @@ function submitEmpForm(eid) {
     email:gv('ef-email'), dept:gv('ef-dept'), position:gv('ef-pos'),
     phone:gv('ef-phone'), join:gv('ef-join'), managerEmail:gv('ef-mgr'),
     emergency:gv('ef-emg'), emergencyPhone:gv('ef-emgp'), role:gv('ef-role'),
-    aadhaar:gv('ef-aadhaar'), pan, tz:gv('ef-tz')
+    aadhaar:gv('ef-aadhaar'), pan, tz:gv('ef-tz'), shift:gv('ef-shift')
   }, eid || null);
 }
 
@@ -3810,7 +3852,7 @@ function iStar(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="no
 function iGear(){return`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`}
 
 function getBalance(uid){const yr=new Date().getFullYear();return DB.get('leaveBalances').find(b=>b.uid===uid&&b.year===yr)||{annual:20,sick:10,casual:7,emergency:3};}
-function deductBalance(leave){const yr=new Date().getFullYear();const bal=DB.get('leaveBalances');const i=bal.findIndex(b=>b.uid===leave.uid&&b.year===yr);if(i<0)return;const key={annual:'annual',sick:'sick',casual:'casual',emergency:'emergency'}[leave.type]||'annual';bal[i][key]=Math.max(0,(bal[i][key]||0)-leave.days);DB.set('leaveBalances',bal);}
+function deductBalance(leave){const yr=new Date().getFullYear();const bal=DB.get('leaveBalances');const i=bal.findIndex(b=>b.uid===leave.uid&&b.year===yr);if(i<0)return;const key={annual:'annual',sick:'sick',casual:'casual',emergency:'emergency'}[leave.type]||'annual';bal[i][key]=Math.max(0,(bal[i][key]||0)-leave.days);dbSet('leaveBalances',bal);}
 function isLate(inTime){const s=DB.one('settings');if(!s)return false;return tms(inTime)>tms(s.officeStart+':00');}
 function balBar(rem,total,color){const pct=total>0?Math.round((rem/total)*100):0;return `<div style="height:4px;background:var(--border);border-radius:2px;width:80px;margin-top:3px"><div style="height:4px;width:${pct}%;background:${color};border-radius:2px"></div></div>`;}
 
@@ -3915,7 +3957,7 @@ function saveBalance(uid){
   let i=bal.findIndex(b=>b.uid===uid&&b.year===yr);
   const upd={id:'bal_'+uid+'_'+yr,uid,year:yr,annual:+gi('eb-a').value||0,sick:+gi('eb-s').value||0,casual:+gi('eb-c').value||0,emergency:+gi('eb-e').value||0};
   if(i>=0)bal[i]=upd;else bal.push(upd);
-  DB.set('leaveBalances',bal);toast('Balance updated','success');closeModal();navigate('leave-balances');
+  dbSet('leaveBalances',bal);toast('Balance updated','success');closeModal();navigate('leave-balances');
 }
 function resetAllBalances(){
   if(!confirm('Reset ALL employees to default balances?'))return;
@@ -3923,7 +3965,7 @@ function resetAllBalances(){
   const users=DB.get('users').filter(u=>u.role==='employee'&&u.active);
   const bal=DB.get('leaveBalances').filter(b=>b.year!==yr);
   users.forEach(u=>bal.push({id:'bal_'+u.id+'_'+yr,uid:u.id,year:yr,annual:20,sick:10,casual:7,emergency:3}));
-  DB.set('leaveBalances',bal);toast('All balances reset','success');navigate('leave-balances');
+  dbSet('leaveBalances',bal);toast('All balances reset','success');navigate('leave-balances');
 }
 
 function pgSettings(){
@@ -4073,7 +4115,7 @@ function saveSettings(){
     headerColor:     gi('ec-color-hex').value.trim()||gi('ec-color').value,
     footerText:      gi('ec-footer').value.trim(),
   };
-  DB.setOne('settings',{
+  dbSetOne('settings',{
     orgName:        gi('st-org').value,
     officeStart:    gi('st-s').value,
     officeEnd:      gi('st-e').value,
@@ -4185,7 +4227,7 @@ function saveOnboarding(){
   const [uid,uname,dept]=v.split('|');
   if(DB.get('onboarding').find(o=>o.uid===uid)) return toast('Already exists','error');
   const ob={id:'ob_'+Date.now(),uid,uname,dept,startDate:gv('ob-sd'),steps:Array(OB_STEPS.length).fill(false)};
-  const arr=DB.get('onboarding'); arr.push(ob); DB.set('onboarding',arr);
+  const arr=DB.get('onboarding'); arr.push(ob); dbSet('onboarding',arr);
   toast('Onboarding started','success'); closeModal(); navigate('onboarding');
 }
 function viewOnboarding(id){
@@ -4197,7 +4239,7 @@ function viewOnboarding(id){
 function saveObSteps(id){
   const arr=DB.get('onboarding'); const i=arr.findIndex(o=>o.id===id); if(i<0) return;
   arr[i].steps=OB_STEPS.map((_,j)=>!!gi('obs_'+j)?.checked);
-  DB.set('onboarding',arr); toast('Progress saved','success'); closeModal(); navigate('onboarding');
+  dbSet('onboarding',arr); toast('Progress saved','success'); closeModal(); navigate('onboarding');
 }
 
 // ════════════════════════════════════════════
@@ -4262,13 +4304,13 @@ function doAddShift(){
   const n=gv('sh-n'); if(!n) return toast('Enter name','error');
   const days=[1,2,3,4,5,6,7].filter(i=>gi('sd_'+i)?.checked);
   const tz=gv('sh-tz'); const arr=DB.get('shifts'); arr.push({id:'sh_'+Date.now(),name:n,start:gv('sh-s'),end:gv('sh-e'),days,tz});
-  DB.set('shifts',arr); toast('Shift added','success'); closeModal(); navigate('shifts');
+  dbSet('shifts',arr); toast('Shift added','success'); closeModal(); navigate('shifts');
 }
-function delShift(id){if(!confirm('Delete shift?'))return;const arr=DB.get('shifts').filter(s=>s.id!==id);DB.set('shifts',arr);navigate('shifts');}
+function delShift(id){if(!confirm('Delete shift?'))return;const arr=DB.get('shifts').filter(s=>s.id!==id);dbSet('shifts',arr);navigate('shifts');}
 function assignShift(uid,shiftId){
   const arr=DB.get('shiftAssignments').filter(x=>x.uid!==uid);
   if(shiftId) arr.push({uid,shiftId});
-  DB.set('shiftAssignments',arr);toast('Shift assigned','success');
+  dbSet('shiftAssignments',arr);toast('Shift assigned','success');
 }
 
 // ════════════════════════════════════════════
@@ -4403,10 +4445,10 @@ function submitCompOff(){
   const wd=gv('co-wd'),r=gv('co-r'); if(!wd||!r) return toast('Fill required fields','error');
   const arr=DB.get('compoffs');
   arr.push({id:'co_'+Date.now(),uid:CU.id,uname:CU.name,workDate:wd,reason:r,compDate:gv('co-cd')||null,status:'pending',applied:td()});
-  DB.set('compoffs',arr); toast('Comp-off request submitted','success'); closeModal(); navigate('my-compoff');
+  dbSet('compoffs',arr); toast('Comp-off request submitted','success'); closeModal(); navigate('my-compoff');
 }
-function approveCompOff(id){const arr=DB.get('compoffs');const i=arr.findIndex(c=>c.id===id);if(i<0)return;arr[i].status='approved';arr[i].approvedBy=CU.name;DB.set('compoffs',arr);toast('Approved','success');navigate('comp-off');}
-function rejectCompOff(id){const arr=DB.get('compoffs');const i=arr.findIndex(c=>c.id===id);if(i<0)return;arr[i].status='rejected';DB.set('compoffs',arr);toast('Rejected','info');navigate('comp-off');}
+function approveCompOff(id){const arr=DB.get('compoffs');const i=arr.findIndex(c=>c.id===id);if(i<0)return;arr[i].status='approved';arr[i].approvedBy=CU.name;dbSet('compoffs',arr);toast('Approved','success');navigate('comp-off');}
+function rejectCompOff(id){const arr=DB.get('compoffs');const i=arr.findIndex(c=>c.id===id);if(i<0)return;arr[i].status='rejected';dbSet('compoffs',arr);toast('Rejected','info');navigate('comp-off');}
 
 // ════════════════════════════════════════════
 // PAYROLL
@@ -4458,7 +4500,7 @@ function openSalaryConfig(uid,uname){
 function saveSalaryConfig(uid){
   const arr=DB.get('salaryConfig').filter(s=>s.uid!==uid);
   arr.push({uid,basic:+gv('sc-b')||0,hra:+gv('sc-h')||0,ta:+gv('sc-ta')||0,allowances:+gv('sc-a')||0,pf:!!gi('sc-pf')?.checked});
-  DB.set('salaryConfig',arr); toast('Salary saved','success'); closeModal(); navigate('payroll');
+  dbSet('salaryConfig',arr); toast('Salary saved','success'); closeModal(); navigate('payroll');
 }
 function runPayroll(period){
   if(!confirm(`Run payroll for ${period}? Existing slips will be overwritten.`)) return;
@@ -4476,7 +4518,7 @@ function runPayroll(period){
     const net=gross-deductions;
     newSlips.push({id:'slip_'+u.id+'_'+period,uid:u.id,uname:u.name,dept:u.dept,period,month:mo,year:yr,basic:cfg.basic,hra:cfg.hra,ta:cfg.ta,allowances:cfg.allowances,gross,pf,pt,tax,deductions,net,generatedBy:CU.name,generatedOn:td()});
   });
-  DB.set('payslips',newSlips);
+  dbSet('payslips',newSlips);
   toast(`Payroll run — ${users.length} payslips generated`,'success');
   // Send payslip notification emails to all employees
   if(canSendNotif('payslip')){
@@ -4612,14 +4654,14 @@ function submitExpense(){
   if(!t||!a) return toast('Title and amount required','error');
   const arr=DB.get('expenses');
   arr.push({id:'ex_'+Date.now(),uid:CU.id,uname:CU.name,dept:CU.dept,title:t,amount:+a,category:gv('ex-c'),date:d||td(),status:'pending',submitted:td(),receipt:_expReceipt||null});
-  DB.set('expenses',arr); _expReceipt=null;
+  dbSet('expenses',arr); _expReceipt=null;
   addNotif('Expense Submitted',`₹${a} claim for "${t}" submitted for approval.`,'info');
   toast('Expense submitted','success'); closeModal(); navigate('my-expenses');
 }
 function reviewExpense(id,status){
   const arr=DB.get('expenses'); const i=arr.findIndex(e=>e.id===id); if(i<0)return;
   arr[i].status=status; arr[i].reviewedBy=CU.name; arr[i].reviewedOn=td();
-  DB.set('expenses',arr); toast('Expense '+status,'success'); navigate('expenses-admin');
+  dbSet('expenses',arr); toast('Expense '+status,'success'); navigate('expenses-admin');
 }
 function viewReceipt(id){
   const e=DB.get('expenses').find(x=>x.id===id); if(!e||!e.receipt)return;
@@ -4659,7 +4701,7 @@ function openAddAsset(){
 }
 function saveAsset(){
   const n=gv('as-n'); if(!n) return toast('Name required','error');
-  DB.set('assets',[...DB.get('assets'),{id:'ast_'+Date.now(),name:n,type:gv('as-t'),serial:gv('as-s'),notes:gv('as-note'),status:'available',assignedTo:null,assignedOn:null}]);
+  dbSet('assets',[...DB.get('assets'),{id:'ast_'+Date.now(),name:n,type:gv('as-t'),serial:gv('as-s'),notes:gv('as-note'),status:'available',assignedTo:null,assignedOn:null}]);
   toast('Asset added','success'); closeModal(); navigate('assets');
 }
 function openAssignAsset(id){
@@ -4672,15 +4714,15 @@ function doAssignAsset(id){
   const uid=gv('asg-u'); if(!uid) return toast('Select employee','error');
   const arr=DB.get('assets'); const i=arr.findIndex(a=>a.id===id); if(i<0)return;
   arr[i].assignedTo=uid; arr[i].assignedOn=td(); arr[i].status='assigned';
-  DB.set('assets',arr); toast('Asset assigned','success'); closeModal(); navigate('assets');
+  dbSet('assets',arr); toast('Asset assigned','success'); closeModal(); navigate('assets');
 }
 function returnAsset(id){
   if(!confirm('Mark asset as returned?'))return;
   const arr=DB.get('assets'); const i=arr.findIndex(a=>a.id===id); if(i<0)return;
   arr[i].assignedTo=null; arr[i].returnedOn=td(); arr[i].status='returned';
-  DB.set('assets',arr); toast('Asset returned','success'); navigate('assets');
+  dbSet('assets',arr); toast('Asset returned','success'); navigate('assets');
 }
-function delAsset(id){if(!confirm('Delete asset?'))return;DB.set('assets',DB.get('assets').filter(a=>a.id!==id));navigate('assets');}
+function delAsset(id){if(!confirm('Delete asset?'))return;dbSet('assets',DB.get('assets').filter(a=>a.id!==id));navigate('assets');}
 function pgMyAssets(){
   const assets=DB.get('assets').filter(a=>a.assignedTo===CU.id);
   const rows=assets.map(a=>`<tr><td><b>${esc(a.name)}</b></td><td>${esc(a.type)}</td><td>${esc(a.serial||'—')}</td><td>${fdate(a.assignedOn)}</td><td><span class="badge bg">Assigned</span></td></tr>`);
@@ -4716,22 +4758,45 @@ function pgMyTickets(){
   gi('page-body').innerHTML=html;
 }
 function openNewTicket(){
+  const assignOpts=DB.get('users').filter(u=>u.active&&u.id!==CU.id).map(u=>`<option value="${u.id}" data-email="${esc(u.email||'')}">${esc(u.name)}${u.email?' — '+esc(u.email):''}</option>`).join('');
   modal('<h3>Raise Support Ticket</h3>',
     `<div class="fg"><label>Title</label><input id="tx-t" placeholder="Brief description of the issue"></div>
      <div class="grid-2">
        <div class="fg"><label>Category</label><select id="tx-c">${TIX_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
        <div class="fg"><label>Priority</label><select id="tx-p"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
      </div>
+     <div class="fg"><label>Assign To</label><select id="tx-a"><option value="">— Select person —</option>${assignOpts}</select></div>
      <div class="fg"><label>Description</label><textarea id="tx-d" placeholder="Detailed description..." style="min-height:100px"></textarea></div>`,
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitTicket()">Submit</button>`);
 }
 function submitTicket(){
   const t=gv('tx-t'),d=gv('tx-d'); if(!t) return toast('Title required','error');
+  const assignSel=gi('tx-a'); const assignedUid=assignSel?assignSel.value:'';
+  const assignedUser=assignedUid?DB.get('users').find(u=>u.id===assignedUid):null;
   const arr=DB.get('tickets');
   const id='tix_'+Date.now();
-  arr.push({id,uid:CU.id,uname:CU.name,title:t,category:gv('tx-c'),priority:gv('tx-p'),description:d,status:'open',createdOn:td(),messages:[]});
-  DB.set('tickets',arr);
+  arr.push({id,uid:CU.id,uname:CU.name,uemail:CU.email||'',title:t,category:gv('tx-c'),priority:gv('tx-p'),description:d,status:'open',createdOn:td(),messages:[],
+    assignedTo:assignedUid||null,assignedToName:assignedUser?assignedUser.name:'',assignedToEmail:assignedUser?assignedUser.email:''});
+  dbSet('tickets',arr);
   addNotif('Ticket Raised',`Your ticket "${t}" has been submitted.`,'info');
+  // Email the assigned person
+  if(assignedUser&&assignedUser.email){
+    try {
+      const body=emailHtml('New Ticket Assigned to You',
+        `<p>Hi <b>${esc(assignedUser.name)}</b>,</p>
+         <p>A support ticket has been assigned to you by <b>${esc(CU.name)}</b>.</p>
+         <table style="width:100%;border-collapse:collapse;font-size:13px">
+           <tr><td style="padding:6px 0;color:#64748B;width:130px">Title</td><td style="font-weight:600">${esc(t)}</td></tr>
+           <tr><td style="padding:6px 0;color:#64748B">Category</td><td>${esc(gv('tx-c'))}</td></tr>
+           <tr><td style="padding:6px 0;color:#64748B">Priority</td><td>${esc(gv('tx-p'))}</td></tr>
+           <tr><td style="padding:6px 0;color:#64748B">Raised By</td><td>${esc(CU.name)}${CU.email?' ('+esc(CU.email)+')':''}</td></tr>
+           <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
+           <tr><td style="padding:6px 0;color:#64748B">Description</td><td>${esc(d)}</td></tr>
+         </table>
+         <p style="margin-top:12px">Please log in to HRMS to review and respond to this ticket.</p>`);
+      sendEmail([assignedUser.email],'🎫 Ticket Assigned: '+t, body);
+    } catch(e){ console.warn('Ticket assign email failed',e); }
+  }
   toast('Ticket submitted','success'); closeModal();
   if(CU.role==='admin') navigate('helpdesk-admin'); else navigate('my-tickets');
 }
@@ -4752,9 +4817,34 @@ function viewTicket(id){
 function replyTicket(id){
   const msg=gi('tx-reply')?.value?.trim(); if(!msg&&CU.role!=='admin') return toast('Enter a message','error');
   const tix=DB.get('tickets'); const i=tix.findIndex(t=>t.id===id); if(i<0)return;
+  const prevStatus=tix[i].status;
   if(msg) tix[i].messages.push({by:CU.name,msg,date:td()});
   if(CU.role==='admin'&&gi('tx-st')) tix[i].status=gi('tx-st').value;
-  DB.set('tickets',tix); toast('Reply sent','success'); closeModal();
+  const newStatus=tix[i].status;
+  dbSet('tickets',tix);
+  // Email raiser when admin changes status
+  if(CU.role==='admin'&&newStatus!==prevStatus){
+    const raiserEmail=tix[i].uemail;
+    if(raiserEmail){
+      try {
+        const statusLabel=newStatus==='in-progress'?'In Progress':newStatus==='closed'?'Closed':'Open';
+        const emoji=newStatus==='closed'?'✅':newStatus==='in-progress'?'🔄':'🔓';
+        const body=emailHtml(`${emoji} Ticket Status Updated`,
+          `<p>Hi <b>${esc(tix[i].uname)}</b>,</p>
+           <p>Your support ticket status has been updated by <b>${esc(CU.name)}</b>.</p>
+           <table style="width:100%;border-collapse:collapse;font-size:13px">
+             <tr><td style="padding:6px 0;color:#64748B;width:130px">Ticket</td><td style="font-weight:600">${esc(tix[i].title)}</td></tr>
+             <tr><td style="padding:6px 0;color:#64748B">New Status</td><td style="font-weight:700">${statusLabel}</td></tr>
+             <tr><td style="padding:6px 0;color:#64748B">Updated By</td><td>${esc(CU.name)}</td></tr>
+             <tr><td style="padding:6px 0;color:#64748B">Date</td><td>${td()}</td></tr>
+             ${msg?`<tr><td style="padding:6px 0;color:#64748B">Message</td><td>${esc(msg)}</td></tr>`:''}
+           </table>
+           <p style="margin-top:12px">Log in to HRMS to view your ticket details.</p>`);
+        sendEmail([raiserEmail],`${emoji} Ticket ${statusLabel}: ${tix[i].title}`,body);
+      } catch(e){ console.warn('Ticket status email failed',e); }
+    }
+  }
+  toast('Reply sent','success'); closeModal();
   if(CU.role==='admin') navigate('helpdesk-admin'); else navigate('my-tickets');
 }
 
