@@ -3297,6 +3297,56 @@ function openReview(id,def){
     `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="reviewLeave('${id}',gv('rv-s'),gv('rv-c'))">Submit</button>`);
 }
 
+function reviewLeave(id, status, comment) {
+  const leaves = DB.get('leaves');
+  const idx = leaves.findIndex(l => l.id === id);
+  if (idx < 0) return toast('Leave request not found', 'error');
+  const lv = leaves[idx];
+  lv.status = status;
+  lv.comment = comment || '';
+  lv.reviewBy = CU.name;
+  lv.reviewOn = td();
+  leaves[idx] = lv;
+  dbSet('leaves', leaves);
+  lg(CU.id, CU.name, 'LEAVE_REVIEW', `${status.toUpperCase()} leave for ${lv.uname} (${lv.sd} to ${lv.ed})`);
+
+  // Notify the requestor (in-app)
+  const notifMsg = `Your ${lv.type} leave (${fdate(lv.sd)} – ${fdate(lv.ed)}, ${lv.days} day${lv.days>1?'s':''}) has been ${status} by ${CU.name}.${comment ? ' Comment: ' + comment : ''}`;
+  const notifs = DB.get('notifications');
+  notifs.push({ id:'n_'+Date.now(), uid: lv.uid, title: 'Leave ' + (status==='approved'?'Approved ✓':'Rejected ✗'), msg: notifMsg, type:'leave', ts: new Date().toISOString(), read: false });
+  dbSet('notifications', notifs);
+
+  // Email the requestor
+  if (canSendNotif('leaveReview')) {
+    const requestorUser = DB.get('users').find(u => u.id === lv.uid);
+    const requestorEmail = requestorUser ? (requestorUser.email || requestorUser.workEmail || '') : '';
+    const toEmails = [requestorEmail, lv.managerEmail].filter(Boolean);
+    if (toEmails.length) {
+      const statusEmoji = status === 'approved' ? '✅' : '❌';
+      const statusCap   = status === 'approved' ? 'Approved' : 'Rejected';
+      const commentLine = comment ? `Comment: ${comment}\n\n` : '';
+      const _t = renderTemplate('leaveReview', {
+        employee_name: lv.uname,
+        leave_type: lv.type,
+        leave_from: lv.sd,
+        leave_to: lv.ed,
+        leave_days: lv.days,
+        status,
+        status_cap: statusCap,
+        status_emoji: statusEmoji,
+        reviewed_by: CU.name,
+        comment_line: commentLine,
+        date: td()
+      });
+      sendEmail(toEmails, _t.subject, emailHtml(_t.subject, templateBodyToHtml(_t.body)));
+    }
+  }
+
+  closeModal();
+  toast(`Leave ${status} for ${lv.uname}`, status === 'approved' ? 'success' : 'error');
+  navigate('leaves-admin');
+}
+
 // ════════════════════════════════════════════
 // PAGE: ANNOUNCEMENTS (Employee)
 // ════════════════════════════════════════════
@@ -4685,55 +4735,38 @@ function _pollCards(polls,isAdmin){
 function openCreatePoll(){
   modal('<h3>Create Poll</h3>',
     `<div class="fg"><label>Question</label><input id="pl-q" placeholder="What would you like to ask?"></div>
-     <div class="fg"><label>Options (one per line, min 2)</label><textarea id="pl-o" placeholder="Yes\nNo\nMaybe" style="min-height:90px"></textarea></div>`,
-    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="createPoll()">Create</button>`);
-}
-function createPoll(){
-  const q=gv('pl-q'); const opts=gi('pl-o').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  if(!q) return toast('Enter a question','error');
-  if(opts.length<2) return toast('Need at least 2 options','error');
-  DB.set('polls',[...DB.get('polls'),{id:'pl_'+Date.now(),question:q,options:opts.map(t=>({text:t,votes:[]})),createdBy:CU.name,date:td(),active:true}]);
-  toast('Poll created','success'); closeModal(); navigate('polls-admin');
-}
-function votePoll(id,optIdx){
-  const polls=DB.get('polls'); const i=polls.findIndex(p=>p.id===id); if(i<0)return;
-  if(!polls[i].options[optIdx].votes) polls[i].options[optIdx].votes=[];
-  polls[i].options[optIdx].votes.push(CU.id);
-  DB.set('polls',polls); toast('Vote recorded','success'); navigate('polls');
-}
-function togglePoll(id){const polls=DB.get('polls');const i=polls.findIndex(p=>p.id===id);if(i<0)return;polls[i].active=!polls[i].active;DB.set('polls',polls);navigate('polls-admin');}
-function deletePoll(id){if(!confirm('Delete poll?'))return;DB.set('polls',DB.get('polls').filter(p=>p.id!==id));navigate('polls-admin');}
-
-// ════════════════════════════════════════════
-// SIDEBAR TOGGLE
-// ════════════════════════════════════════════
-function toggleSidebar(){
-  const sb=gi('sidebar'), bd=gi('sb-backdrop');
-  if(!sb) return;
-  if(window.innerWidth<=768){
-    const open=sb.classList.toggle('mob-open');
-    if(bd) bd.classList.toggle('open', open);
-    document.body.style.overflow=open?'hidden':'';
-  } else {
-    const collapsed=sb.classList.toggle('collapsed');
-    document.body.classList.toggle('sb-collapsed', collapsed);
-    localStorage.setItem('zp_sb_collapsed', collapsed?'1':'0');
-  }
-}
-function restoreSidebarState(){
-  if(localStorage.getItem('zp_sb_collapsed')==='1'){
-    const sb=gi('sidebar');
-    if(sb) sb.classList.add('collapsed'); document.body.classList.add('sb-collapsed');
-  }
+     <div class="fg"><label>Options (one per line, min 2)</label><textarea id="pl-o" placeholder="Yes&#10;No&#10;Maybe" style="min-height:90px"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitPoll()">Create Poll</button>`);
 }
 
-// ════════════════════════════════════════════
-// INIT
-// ════════════════════════════════════════════
-document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&gi('login-page').style.display!=='none') doLogin();
-  if(e.key==='Escape') closeModal();
-});
+function submitPoll() {
+  const q = gv('pl-q').trim();
+  const opts = gv('pl-o').split('\n').map(o=>o.trim()).filter(Boolean);
+  if (!q) return toast('Enter a question','error');
+  if (opts.length < 2) return toast('Enter at least 2 options','error');
+  const poll = { id:'poll_'+Date.now(), question:q, options:opts.map(o=>({text:o,votes:[]})), active:true, createdBy:CU.name, createdAt:new Date().toISOString() };
+  const polls = DB.get('polls'); polls.push(poll); dbSet('polls', polls);
+  closeModal(); navigate('polls-admin'); toast('Poll created','success');
+}
+
+function votePoll(pollId, optIdx) {
+  const polls = DB.get('polls');
+  const p = polls.find(x=>x.id===pollId); if(!p) return;
+  p.options.forEach(o=>{ o.votes=(o.votes||[]).filter(v=>v!==CU.id); });
+  if(!p.options[optIdx]) return;
+  p.options[optIdx].votes = [...(p.options[optIdx].votes||[]), CU.id];
+  dbSet('polls', polls);
+  navigate('polls');
+}
+
+function togglePoll(pollId) {
+  const polls = DB.get('polls');
+  const p = polls.find(x=>x.id===pollId); if(!p) return;
+  p.active = !p.active;
+  dbSet('polls', polls);
+  navigate('polls-admin');
+}
+
 seed();
 restore();
 </script>
