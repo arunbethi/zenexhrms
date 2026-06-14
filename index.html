@@ -1831,6 +1831,40 @@ function dbSetOne(key, value) {
 function spLoading(show) { const el=gi('sp-loading'); if(el) el.style.display=show?'flex':'none'; }
 function spMsg(msg, sub) { const m=gi('sp-msg'),s=gi('sp-sub'); if(m)m.textContent=msg; if(s&&sub)s.textContent=sub; }
 
+// Deduplicate users array by email — keep admin over employee, then earliest id
+// Also deletes duplicates from Supabase
+async function deduplicateUsersByEmail(users) {
+  const byEmail = {};
+  for (const u of users) {
+    const key = (u.email || '').trim().toLowerCase();
+    if (!key) continue;
+    if (!byEmail[key]) byEmail[key] = [];
+    byEmail[key].push(u);
+  }
+  const toDelete = [];
+  for (const group of Object.values(byEmail)) {
+    if (group.length <= 1) continue;
+    // Sort: admin first, then by id ascending (keep original)
+    group.sort((a, b) => {
+      if (a.role === 'admin' && b.role !== 'admin') return -1;
+      if (b.role === 'admin' && a.role !== 'admin') return  1;
+      return a.id < b.id ? -1 : 1;
+    });
+    toDelete.push(...group.slice(1));
+  }
+  if (!toDelete.length) return users;
+  const dupIds = new Set(toDelete.map(u => u.id));
+  const cleaned = users.filter(u => !dupIds.has(u.id));
+  DB.set('users', cleaned);
+  // Remove duplicates from Supabase
+  for (const u of toDelete) {
+    try { await SB.remove('zp_users', u.id); } catch(_) {}
+  }
+  console.info('[HRMS] Removed ' + toDelete.length + ' duplicate user(s):', toDelete.map(u=>u.email+'/'+u.role));
+  toast('Removed ' + toDelete.length + ' duplicate user account(s)', 'info');
+  return cleaned;
+}
+
 // Full sync on login (pull Supabase ↔ localStorage)
 async function spSync() {
   spLoading(true);
@@ -1886,7 +1920,7 @@ async function spSync() {
   }
 
   // Refresh local users from Supabase — ensure current user is included
-  const freshUsers = await SB.getAll('zp_users');
+  let freshUsers = await SB.getAll('zp_users');
   if (freshUsers && freshUsers.length > 0) {
     // If CU exists but isn't in Supabase yet, add them
     if (CU && CU.id && !freshUsers.find(u => u.id === CU.id)) {
@@ -1894,6 +1928,8 @@ async function spSync() {
       SB.upsert('zp_users', CU).catch(() => {});
     }
     DB.set('users', freshUsers);
+    // Deduplicate by email (fixes any admin+employee with same email)
+    freshUsers = await deduplicateUsersByEmail(freshUsers);
   }
 
   // Re-seed demo users into localStorage
@@ -2734,15 +2770,23 @@ function totalBrkMin(attId) {
 function saveEmp(data, eid) {
   if (!data.name || !data.username) return toast('Name and username are required','error');
   let users = DB.get('users');
+  const emailLower = (data.email || '').trim().toLowerCase();
   if (eid) {
     const i = users.findIndex(u => u.id === eid);
     if (i < 0) return toast('Employee not found','error');
+    // Check email not used by another user
+    if (emailLower && users.find(u => u.id !== eid && (u.email||'').toLowerCase() === emailLower)) {
+      return toast('That email is already registered to another user','error');
+    }
     users[i] = { ...users[i], ...data };
     dbSet('users', users);
     lg(CU.id, CU.name, 'EDIT_EMP', 'Updated employee: ' + data.name);
     toast('Employee updated', 'success');
   } else {
     if (users.find(u => u.username === data.username)) return toast('Username already taken','error');
+    if (emailLower && users.find(u => (u.email||'').toLowerCase() === emailLower)) {
+      return toast('That email is already registered. Each user must have a unique email.','error');
+    }
     const emp = { id:'u_'+Date.now(), ...data, active: true, join: data.join || td() };
     users.push(emp);
     dbSet('users', users);
@@ -2751,6 +2795,17 @@ function saveEmp(data, eid) {
   }
   closeEmpDrawer(); pgEmps();
 }
+async function runDeduplicateUsers() {
+  const users = DB.get('users');
+  const before = users.length;
+  const cleaned = await deduplicateUsersByEmail([...users]);
+  const removed = before - cleaned.length;
+  if (removed === 0) {
+    toast('No duplicate users found — all emails are unique ✓', 'success');
+  }
+  pgEmps();
+}
+
 function toggleEmp(uid) {
   const users = DB.get('users');
   const i = users.findIndex(u => u.id === uid);
@@ -3034,7 +3089,7 @@ function pgAdminDash() {
 function pgEmps() {
   let html=`<div class="sec-hdr">
     <div class="filter-bar" style="margin:0"><input type="text" id="emp-q" placeholder="Search by name, dept or position..." oninput="filterEmps(this.value)" style="width:280px"></div>
-    <div class="sec-hdr-actions"><button class="btn btn-ghost btn-sm" onclick="exportEmps()">Export CSV</button><button class="btn btn-primary" onclick="openAddEmp()">+ Add Employee</button></div>
+    <div class="sec-hdr-actions"><button class="btn btn-ghost btn-sm" onclick="exportEmps()">Export CSV</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="runDeduplicateUsers()">Fix Duplicates</button><button class="btn btn-primary" onclick="openAddEmp()">+ Add Employee</button></div>
   </div>
   <div class="card"><div class="tbl-wrap">
   <table><thead><tr><th>Employee</th><th>Username</th><th>Role</th><th>Department</th><th>Position</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
