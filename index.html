@@ -1504,6 +1504,16 @@ async function msLogin() {
       result = await instance.loginPopup({ scopes: ['User.Read','https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Sites.Manage.All','https://graph.microsoft.com/Mail.Send'] });
     }
 
+    // Domain restriction — only @zenexpartners.net accounts allowed
+    const msEmail = (result.account.username || '').toLowerCase();
+    if (!msEmail.endsWith('@zenexpartners.net')) {
+      errEl.textContent = 'Access restricted to @zenexpartners.net accounts only. Please use your Zenex Partners work account.';
+      errEl.style.display = 'block';
+      btn.innerHTML = MS_ICON + ' Sign in with Microsoft'; btn.disabled = false;
+      try { await instance.logoutPopup({ account: result.account }); } catch(_) {}
+      return;
+    }
+
     const user = msLoginUser(result.account);
     if (!user.active) {
       errEl.textContent = 'Your account is deactivated. Contact HR.';
@@ -1738,6 +1748,19 @@ async function spSync() {
       }
     }
   }
+  // Always ensure demo/admin seed users exist in SP
+  const spUsers = await SP.getAll('ZP_Users');
+  const spUserIds = (spUsers || []).map(u => u.id);
+  for (const du of DEMO_USERS) {
+    if (!spUserIds.includes(du.id)) {
+      spMsg('Adding demo user: ' + du.name);
+      await SP.upsert('ZP_Users', du);
+    }
+  }
+  // Refresh local users list from SP (so demo users get _spId)
+  const freshUsers = await SP.getAll('ZP_Users');
+  if (freshUsers && freshUsers.length > 0) DB.set('users', freshUsers);
+
   spLoading(false);
   toast('Synced with SharePoint ✓','success');
   showAppUI();
